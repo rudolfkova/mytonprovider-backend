@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package providerchecks.v1;
+
+option go_package = "mytonprovider-contracts/proto/providerchecks/v1;providerchecksv1";
+
+// ProviderChecksService runs network-dependent provider BAG checks
+// from a single agent location. Coordinator performs 1-of-3 aggregation.
+service ProviderChecksService {
+  rpc RunChecks(RunChecksRequest) returns (RunChecksResponse);
+}
+
+message RunChecksRequest {
+  string job_id = 1;
+  repeated ProviderBatch providers = 2;
+  CheckTimeouts timeouts = 3;
+}
+
+message ProviderBatch {
+  string provider_pubkey = 1;
+  string provider_address = 2;
+  Endpoint storage_endpoint = 3;
+  repeated ContractRef contracts = 4;
+}
+
+message Endpoint {
+  string ip = 1;
+  int32 port = 2;
+  bytes adnl_pubkey = 3;
+}
+
+message ContractRef {
+  string contract_address = 1;
+  string bag_id = 2;
+}
+
+message CheckTimeouts {
+  uint32 ping_ms = 1;
+  uint32 rldp_ms = 2;
+  uint32 total_ms = 3;
+}
+
+enum ReasonCode {
+  REASON_CODE_UNSPECIFIED = 0;
+
+  VALID_STORAGE_PROOF = 1;
+
+  IP_NOT_FOUND = 101;
+  NOT_FOUND = 102;
+  UNAVAILABLE_PROVIDER = 103;
+  CANT_CREATE_PEER = 104;
+  UNKNOWN_PEER = 105;
+
+  PING_FAILED = 201;
+  INVALID_BAG_ID = 202;
+  FAILED_INITIAL_PING = 203;
+
+  GET_INFO_FAILED = 301;
+  INVALID_HEADER = 302;
+
+  CANT_GET_PIECE = 401;
+  CANT_PARSE_BOC = 402;
+  PROOF_CHECK_FAILED = 403;
+}
+
+message RunChecksResponse {
+  string job_id = 1;
+  string agent_id = 2;
+  string location = 3;
+  int64 started_at_unix = 4;
+  int64 finished_at_unix = 5;
+  repeated ContractCheckResult results = 6;
+}
+
+message ContractCheckResult {
+  string provider_pubkey = 1;
+  string provider_address = 2;
+  string contract_address = 3;
+  string bag_id = 4;
+  ReasonCode reason_code = 5;
+  uint32 latency_ms = 6;
+  string details = 7;
+}
