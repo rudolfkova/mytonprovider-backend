@@ -1,0 +1,20 @@
+version: "3"
+
+tasks:
+  proto:tools:
+    desc: Install protobuf Go generators
+    cmds:
+      - go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+      - go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+  proto:gen:
+    desc: Generate Go code from shared proto contracts
+    cmds:
+      - mkdir -p contracts/gen/go
+      - protoc -I contracts/proto --go_out=contracts/gen/go --go_opt=paths=source_relative --go-grpc_out=contracts/gen/go --go-grpc_opt=paths=source_relative providerchecks/v1/provider_checks.proto
+
+  proto:check:
+    desc: Verify generated proto code is up to date
+    cmds:
+      - task proto:gen
+      - git diff --exit-code -- contracts/gen/go

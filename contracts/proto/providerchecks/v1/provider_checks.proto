@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package providerchecks.v1;
 
-option go_package = "mytonprovider-contracts/proto/providerchecks/v1;providerchecksv1";
+option go_package = "mytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1";
 
 // ProviderChecksService runs network-dependent provider BAG checks
 // from a single agent location. Coordinator performs 1-of-3 aggregation.
@@ -70,6 +70,7 @@ message RunChecksResponse {
   int64 started_at_unix = 4;
   int64 finished_at_unix = 5;
   repeated ContractCheckResult results = 6;
+  repeated ErrorDetail warnings = 7;
 }
 
 message ContractCheckResult {
@@ -80,4 +81,19 @@ message ContractCheckResult {
   ReasonCode reason_code = 5;
   uint32 latency_ms = 6;
   string details = 7;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  INVALID_ARGUMENT = 1;
+  NOT_FOUND_ERROR = 2;
+  DEADLINE_EXCEEDED = 3;
+  UNAVAILABLE = 4;
+  INTERNAL = 5;
+}
+
+message ErrorDetail {
+  ErrorCode code = 1;
+  string message = 2;
+  bool retryable = 3;
 }
