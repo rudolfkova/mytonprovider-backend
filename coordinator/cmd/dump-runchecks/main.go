@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"mytonprovider-coordinator/internal/clients/ifconfig"
@@ -122,7 +123,7 @@ func run() error {
 		builder := providersmaster.NewRequestBuilder(
 			memP, memS, ton, providerClient, dhtClient, ipinfo, logger,
 		)
-		return writeRunChecksDump(ctx, builder, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS)
+		return writeRunChecksDump(ctx, builder, ipinfo, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS)
 
 	case "postgres":
 		connPool, err := connectPostgres(ctx, cfg, logger)
@@ -136,15 +137,94 @@ func run() error {
 		builder := providersmaster.NewRequestBuilder(
 			provRepo, sysRepo, ton, providerClient, dhtClient, ipinfo, logger,
 		)
-		return writeRunChecksDump(ctx, builder, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS)
+		return writeRunChecksDump(ctx, builder, ipinfo, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS)
 	}
 
 	return fmt.Errorf("unknown storage %q", storage)
 }
 
+func metaPathForDump(outPath string) string {
+	base := strings.TrimSuffix(outPath, filepath.Ext(outPath))
+	return base + "-meta.json"
+}
+
+type providerGeoMetaRow struct {
+	ProviderPubkey  string `json:"providerPubkey"`
+	ProviderAddress string `json:"providerAddress"`
+	StorageIP       string `json:"storageIp"`
+	Country         string `json:"country,omitempty"`
+	CountryISO      string `json:"countryIso,omitempty"`
+	City            string `json:"city,omitempty"`
+	GeoLookupError  string `json:"geoLookupError,omitempty"`
+}
+
+type runChecksMetaFile struct {
+	GeneratedAt string               `json:"generatedAt"`
+	Source      string               `json:"source"`
+	Providers   []providerGeoMetaRow `json:"providers"`
+}
+
+func writeProviderGeoMeta(ctx context.Context, ipinfo ifconfig.IFConfig, req *providersmaster.RunChecksRequestPayload, metaPath string, logger *slog.Logger) error {
+	if req == nil || len(req.Providers) == 0 {
+		return nil
+	}
+	rows := make([]providerGeoMetaRow, len(req.Providers))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+	for i := range req.Providers {
+		i := i
+		p := req.Providers[i]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			r := providerGeoMetaRow{
+				ProviderPubkey:  p.ProviderPubkey,
+				ProviderAddress: p.ProviderAddress,
+				StorageIP:       p.StorageEndpoint.IP,
+			}
+			ip := strings.TrimSpace(p.StorageEndpoint.IP)
+			if ip == "" {
+				r.GeoLookupError = "empty storage IP"
+				rows[i] = r
+				return
+			}
+			info, err := ipinfo.GetIPInfo(ctx, ip)
+			if err != nil {
+				r.GeoLookupError = err.Error()
+			} else if info != nil {
+				r.Country = info.Country
+				r.CountryISO = info.CountryISO
+				r.City = info.City
+			}
+			rows[i] = r
+		}()
+	}
+	wg.Wait()
+
+	out := runChecksMetaFile{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Source:      "coordinator dump-runchecks: geo by storage IP (ifconfig.co)",
+		Providers:   rows,
+	}
+	body, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal meta json: %w", err)
+	}
+	body = append(body, '\n')
+	if err := os.WriteFile(metaPath, body, 0o644); err != nil {
+		return fmt.Errorf("write meta file: %w", err)
+	}
+	logger.Info("runchecks geo meta written", "path", metaPath, "providers", len(rows))
+	return nil
+}
+
 func writeRunChecksDump(
 	ctx context.Context,
 	builder providersmaster.RequestBuilder,
+	ipinfo ifconfig.IFConfig,
 	logger *slog.Logger,
 	outPath, jobID string,
 	providerLimit int,
@@ -196,5 +276,12 @@ func writeRunChecksDump(
 	}
 
 	logger.Info("runchecks request dumped", "out", outPath, "providers", len(req.Providers), "storage", storage)
+
+	if outPath != "" && ipinfo != nil {
+		metaPath := metaPathForDump(outPath)
+		if err := writeProviderGeoMeta(ctx, ipinfo, req, metaPath, logger); err != nil {
+			logger.Warn("geo meta skipped", "error", err)
+		}
+	}
 	return nil
 }

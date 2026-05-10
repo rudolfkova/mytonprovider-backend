@@ -120,9 +120,9 @@ tasks:
         echo "3/3 cases passed"
 
   coordinator:dump:runchecks:
-    desc: Dump RunChecks JSON (default in-memory store; scans chain, no Postgres). Use --storage=postgres + DB_* for DB
+    desc: Dump RunChecks JSON + runchecks-live-meta.json (geo по storage IP). Default in-memory; use --storage=postgres + DB_* for DB
     cmds:
-      - go run ./coordinator/cmd/dump-runchecks --limit 1 --out agent/tests/grpc/runchecks-live.json
+      - go run ./coordinator/cmd/dump-runchecks --limit 1000 --out agent/tests/grpc/runchecks-live.json
 
   agent:test:live:
     desc: Run one real dumped request against running test agent
@@ -155,6 +155,14 @@ tasks:
           echo "  valid (VALID_STORAGE_PROOF): $OK"
           echo "  other / failed:            $NOT_OK"
           echo "  total results:              $TOTAL"
+          META_JSON="agent/tests/grpc/runchecks-live-meta.json"
+          if [[ ! -f "$META_JSON" ]]; then
+            EMPTY_META="$(mktemp)"
+            printf '%s\n' '{"providers":[]}' > "$EMPTY_META"
+            META_JSON="$EMPTY_META"
+          fi
+          echo ""
+          jq -r -f agent/tests/grpc/runchecks-live-summary.jq --slurpfile META "$META_JSON" "$LAST_JSON"
         else
           echo ""
           echo "(Install jq to print contract pass/fail summary.)"

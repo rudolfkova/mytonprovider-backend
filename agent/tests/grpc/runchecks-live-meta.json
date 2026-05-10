@@ -1,0 +1,109 @@
+{
+  "generatedAt": "2026-05-10T23:31:20Z",
+  "source": "coordinator dump-runchecks: geo by storage IP (ifconfig.co)",
+  "providers": [
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "storageIp": "94.20.162.32",
+      "country": "Azerbaijan",
+      "countryIso": "AZ"
+    },
+    {
+      "providerPubkey": "0f40a7b9c0d22294214bfee73a31051189b7728ac006b9264c8e963d18279c34",
+      "providerAddress": "EQCeBIT55Uj3k-tJV1aagU3u3Df28SvRDCDKug9dbSJsjS6u",
+      "storageIp": "209.159.159.153",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "30f167a33cdbb78ef5997b7134be8f7d0469742244dc0c6ff4ab70214e886d48",
+      "providerAddress": "EQDq95zEi68_QBRVR-WguwBSTdoTPrrnEqTStpBqIRCFe7zv",
+      "storageIp": "163.245.206.145",
+      "country": "United States",
+      "countryIso": "US",
+      "city": "Valparaiso"
+    },
+    {
+      "providerPubkey": "3248d343499f04515738e96c05c52852cb093df2d4519c2b36e0d170761881b8",
+      "providerAddress": "EQDZAkoF9HWB5JqR9Npu2Wfzp5LlP2ZJaGwJkKkdMR9CW_zj",
+      "storageIp": "67.217.58.4",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "3a65231e59031a3a0c6f363030712730b11562a3c77556184c05d58adeb6b466",
+      "providerAddress": "EQAjRhPNqC9mY2muFNsYwYI5eqb-lsq-sD5xk3SLfrDljMwB",
+      "storageIp": "37.46.135.146",
+      "country": "Russia",
+      "countryIso": "RU"
+    },
+    {
+      "providerPubkey": "3d11c40a1fe54d2b69cf1f8280ce7294ae4c1c7c98ddcc73653a3cf35a1b65af",
+      "providerAddress": "EQBNGHnsFuldhjv9-3LPewyDmKLAhx3PE4m2sa42pSFCWrYx",
+      "storageIp": "216.158.234.165",
+      "country": "United States",
+      "countryIso": "US"
+    },
+    {
+      "providerPubkey": "41a9cd79f55b0abe00b68df838384fbebf16ea11d0f24a8a480f907a93bf33c9",
+      "providerAddress": "EQDynO7t2vznIrXKu7jynxWR1ayGhC1c1sWSI16vr3KE3OG2",
+      "storageIp": "62.181.54.189",
+      "country": "Russia",
+      "countryIso": "RU"
+    },
+    {
+      "providerPubkey": "5613a2bd3c9b6c6764afc96e0d3bb8734a9519d4bbbc569869400ec98427e922",
+      "providerAddress": "EQCD35RZlIiByq2QBw9_M8jmu2wDAApO4PBIm1bHmXlicBNx",
+      "storageIp": "161.129.68.214",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "703bc4d28c500aeba66d9e5c0792651e7e07641bd020cf812a976ffc040f829d",
+      "providerAddress": "EQBnkUL42ufRlDaM8nUYqhwqFfTsYc2v4oxPXK0y3sKw4Z2s",
+      "storageIp": "91.107.120.72",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "7a37d3f16a9375c7b8407fb6126c6dd4a821d55026a4e819d01577631feb73dd",
+      "providerAddress": "EQChhA0wBsdc7KeBsGI0ErA79RQOIUFhkQWZspUQdRd-HoNv",
+      "storageIp": "95.216.98.147",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "94059ff6f0e534b571797a41d2203c500b305e924333ff2264ae20ca0976f9f7",
+      "providerAddress": "EQC2eTZ8uxfIsKxtYIRhzAOXw_DMHeSiuTuDMoYQmN8w29gv",
+      "storageIp": "163.245.206.204",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "95b42da4168733cbed792d2baf3c40facb6ebc432b04d402dc764110cbf9d6fb",
+      "providerAddress": "EQCD_dfhloEW4nl9YFn6rN4v3Mrvtai2hoL8U89cWWt5h7X_",
+      "storageIp": "51.250.32.226",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "99dedb19e91aded4aacc8427252a14d2ed7ed256fa95365250d13d1e0c0c8ea1",
+      "providerAddress": "EQAcgSyvyvUEl8B4cPAZLnoAaWKvAkib-2xm5PlyLOvwDj4b",
+      "storageIp": "5.35.99.180",
+      "country": "Russia",
+      "countryIso": "RU"
+    },
+    {
+      "providerPubkey": "a10d29fcc3f09e2bcf35837771744bf09063cbc31f3f63d8ea5e27381fe44052",
+      "providerAddress": "EQDRT4NtxE_1OCEZeslKDO-KeYisJsC5AXOQZZMYi0jjnFPQ",
+      "storageIp": "157.250.207.214",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "dea2766730486d71173a37ae36a816e7b1bbbc58e40567801a4a0b3bc3e2ff0c",
+      "providerAddress": "EQCM9DbjYI14wzImRjY5gsrl6UcDfKdk7nnbJfJGRcAIl6hY",
+      "storageIp": "5.130.34.113",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    },
+    {
+      "providerPubkey": "f854036e9689595d22a2c2ee4f766bcfafb72b29125c47fc925f51ee1e03a00a",
+      "providerAddress": "EQCrnhxPVMeN3aSLOCMD1T5e6yzWgB3-qU2FtQlwkktG1cgL",
+      "storageIp": "162.220.15.34",
+      "geoLookupError": "failed to get IP config: 429 Too Many Requests"
+    }
+  ]
+}
