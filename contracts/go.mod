@@ -1,4 +1,4 @@
-module mytonprovider-contracts
+module github.com/grach/mytonprovider-contracts
 
 go 1.26.2
 

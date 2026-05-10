@@ -18,3 +18,99 @@ tasks:
     cmds:
       - task proto:gen
       - git diff --exit-code -- contracts/gen/go
+
+  postman:run:
+    desc: Run Postman collection for agent gRPC
+    cmds:
+      - mkdir -p agent/tests/postman/reports
+      - |
+        if ! command -v postman >/dev/null 2>&1 || ! postman collection run --help >/dev/null 2>&1; then
+          echo "Postman CLI is not installed (or desktop postman is used). Install CLI: https://learning.postman.com/docs/postman-cli/postman-cli-installation/"
+          exit 1
+        fi
+      - |
+        postman collection run \
+          "agent/tests/postman/agent-grpc.postman_collection.json" \
+          --environment "agent/tests/postman/agent-local.postman_environment.json" \
+          --reporters cli,json \
+          --reporter-json-export "agent/tests/postman/reports/postman-report.json" \
+          ${POSTMAN_CA_CERT:+--ssl-extra-ca-certs "$POSTMAN_CA_CERT"} \
+          --verbose
+
+  agent:certs:test:
+    desc: Generate local self-signed certs for agent tests
+    cmds:
+      - mkdir -p agent/tests/certs
+      - |
+        openssl req -x509 -newkey rsa:2048 -sha256 -nodes \
+          -keyout agent/tests/certs/server.key \
+          -out agent/tests/certs/server.crt \
+          -days 365 \
+          -subj "/CN=127.0.0.1" \
+          -addext "subjectAltName=IP:127.0.0.1"
+
+  agent:run:test:
+    desc: Run agent locally with test env and local certs
+    deps:
+      - agent:certs:test
+    cmds:
+      - |
+        AGENT_LISTEN_ADDR=:8443 \
+        AGENT_ID=test-agent \
+        AGENT_LOCATION=local \
+        AGENT_AUTH_TOKEN=test-token \
+        AGENT_TLS_CERT_FILE=agent/tests/certs/server.crt \
+        AGENT_TLS_KEY_FILE=agent/tests/certs/server.key \
+        AGENT_MAX_CONCURRENT_PROVIDERS=30 \
+        go run ./agent/cmd/agent
+
+  agent:test:smoke:
+    desc: Run grpcurl smoke checks against already running test agent
+    cmds:
+      - |
+        if ! command -v grpcurl >/dev/null 2>&1; then
+          echo "grpcurl is required. Install: https://github.com/fullstorydev/grpcurl#installation"
+          exit 1
+        fi
+      - |
+        set -euo pipefail
+        echo "Expecting running agent on 127.0.0.1:8443 (start separately with: task agent:run:test)"
+
+        echo "=== CASE 1: valid token + valid payload ==="
+        VALID_OUT="$(grpcurl -insecure -import-path contracts/proto -proto providerchecks/v1/provider_checks.proto -H "authorization: Bearer test-token" -d @ 127.0.0.1:8443 providerchecks.v1.ProviderChecksService/RunChecks < agent/tests/grpc/runchecks-valid.json)"
+        echo "$VALID_OUT"
+        if echo "$VALID_OUT" | rg -q '"jobId": "smoke-valid-1"' && echo "$VALID_OUT" | rg -q '"results":'; then
+          echo "PASS: valid request returned response with results"
+        else
+          echo "FAIL: valid request output mismatch"
+          exit 1
+        fi
+
+        echo "=== CASE 2: invalid token ==="
+        set +e
+        BAD_TOKEN_OUT="$(grpcurl -insecure -import-path contracts/proto -proto providerchecks/v1/provider_checks.proto -H "authorization: Bearer bad-token" -d @ 127.0.0.1:8443 providerchecks.v1.ProviderChecksService/RunChecks < agent/tests/grpc/runchecks-invalid-token.json 2>&1)"
+        BAD_TOKEN_CODE=$?
+        set -e
+        echo "$BAD_TOKEN_OUT"
+        if [ $BAD_TOKEN_CODE -ne 0 ] && echo "$BAD_TOKEN_OUT" | rg -q 'Code: Unauthenticated'; then
+          echo "PASS: invalid token rejected with Unauthenticated"
+        else
+          echo "FAIL: invalid token case mismatch"
+          exit 1
+        fi
+
+        echo "=== CASE 3: invalid payload ==="
+        set +e
+        BAD_PAYLOAD_OUT="$(grpcurl -insecure -import-path contracts/proto -proto providerchecks/v1/provider_checks.proto -H "authorization: Bearer test-token" -d @ 127.0.0.1:8443 providerchecks.v1.ProviderChecksService/RunChecks < agent/tests/grpc/runchecks-invalid-payload.json 2>&1)"
+        BAD_PAYLOAD_CODE=$?
+        set -e
+        echo "$BAD_PAYLOAD_OUT"
+        if [ $BAD_PAYLOAD_CODE -ne 0 ] && echo "$BAD_PAYLOAD_OUT" | rg -q 'Code: InvalidArgument'; then
+          echo "PASS: invalid payload rejected with InvalidArgument"
+        else
+          echo "FAIL: invalid payload case mismatch"
+          exit 1
+        fi
+
+        echo "=== SUMMARY ==="
+        echo "3/3 cases passed"

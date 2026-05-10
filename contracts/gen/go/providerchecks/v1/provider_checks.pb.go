@@ -781,7 +781,7 @@ const file_providerchecks_v1_provider_checks_proto_rawDesc = "" +
 	"\vUNAVAILABLE\x10\x04\x12\f\n" +
 	"\bINTERNAL\x10\x052o\n" +
 	"\x15ProviderChecksService\x12V\n" +
-	"\tRunChecks\x12#.providerchecks.v1.RunChecksRequest\x1a$.providerchecks.v1.RunChecksResponseBCZAmytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1b\x06proto3"
+	"\tRunChecks\x12#.providerchecks.v1.RunChecksRequest\x1a$.providerchecks.v1.RunChecksResponseBTZRgithub.com/grach/mytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1b\x06proto3"
 
 var (
 	file_providerchecks_v1_provider_checks_proto_rawDescOnce sync.Once

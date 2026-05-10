@@ -1,0 +1,112 @@
+{
+  "info": {
+    "name": "Agent gRPC Checks",
+    "_postman_id": "d89b53a8-b4a3-4f96-a2cc-8df70ea3bb37",
+    "description": "Smoke and negative tests for ProviderChecksService.RunChecks.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "RunChecks - valid token and payload",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "authorization",
+            "value": "Bearer {{agent_auth_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{agent_grpc_url}}/providerchecks.v1.ProviderChecksService/RunChecks",
+          "host": [
+            "{{agent_grpc_url}}"
+          ],
+          "path": [
+            "providerchecks.v1.ProviderChecksService",
+            "RunChecks"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"job_id\": \"manual-smoke-1\",\n  \"providers\": [\n    {\n      \"provider_pubkey\": \"8f6b5f0caa1cc6f89a7848f7058cf8efbf25f20d301676e64fcbaf9a9d7d5d21\",\n      \"provider_address\": \"EQDummyProviderAddress\",\n      \"storage_endpoint\": {\n        \"ip\": \"{{provider_storage_ip}}\",\n        \"port\": {{provider_storage_port}},\n        \"adnl_pubkey\": \"{{provider_adnl_pubkey_base64}}\"\n      },\n      \"contracts\": [\n        {\n          \"contract_address\": \"EQDummyContractAddress\",\n          \"bag_id\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n        }\n      ]\n    }\n  ],\n  \"timeouts\": {\n    \"ping_ms\": 3000,\n    \"rldp_ms\": 5000,\n    \"total_ms\": 15000\n  }\n}"
+        },
+        "description": "Expected: successful gRPC response with results array."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Response has job_id', function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.job_id).to.eql('manual-smoke-1');",
+              "});",
+              "pm.test('Response contains results', function () {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body.results).to.be.an('array');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "RunChecks - invalid token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "authorization",
+            "value": "Bearer invalid-token",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{agent_grpc_url}}/providerchecks.v1.ProviderChecksService/RunChecks",
+          "host": [
+            "{{agent_grpc_url}}"
+          ],
+          "path": [
+            "providerchecks.v1.ProviderChecksService",
+            "RunChecks"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"job_id\": \"manual-smoke-auth\",\n  \"providers\": [],\n  \"timeouts\": {\n    \"ping_ms\": 1000,\n    \"rldp_ms\": 1000,\n    \"total_ms\": 5000\n  }\n}"
+        },
+        "description": "Expected: gRPC Unauthenticated."
+      }
+    },
+    {
+      "name": "RunChecks - invalid payload",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "authorization",
+            "value": "Bearer {{agent_auth_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{agent_grpc_url}}/providerchecks.v1.ProviderChecksService/RunChecks",
+          "host": [
+            "{{agent_grpc_url}}"
+          ],
+          "path": [
+            "providerchecks.v1.ProviderChecksService",
+            "RunChecks"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"job_id\": \"\",\n  \"providers\": [],\n  \"timeouts\": {\n    \"ping_ms\": 1000,\n    \"rldp_ms\": 1000,\n    \"total_ms\": 5000\n  }\n}"
+        },
+        "description": "Expected: gRPC InvalidArgument."
+      }
+    }
+  ]
+}

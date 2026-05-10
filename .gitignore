@@ -11,3 +11,8 @@
 *mtpo-backend
 *.log
 *myapp
+*.pem
+*.crt
+*.key
+*.csr
+certs/

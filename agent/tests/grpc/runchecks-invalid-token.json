@@ -1,0 +1,25 @@
+{
+  "job_id": "smoke-invalid-token",
+  "providers": [
+    {
+      "provider_pubkey": "8f6b5f0caa1cc6f89a7848f7058cf8efbf25f20d301676e64fcbaf9a9d7d5d21",
+      "provider_address": "EQDummyProviderAddress",
+      "storage_endpoint": {
+        "ip": "127.0.0.1",
+        "port": 7777,
+        "adnl_pubkey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+      },
+      "contracts": [
+        {
+          "contract_address": "EQDummyContractAddress",
+          "bag_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ]
+    }
+  ],
+  "timeouts": {
+    "ping_ms": 1000,
+    "rldp_ms": 2000,
+    "total_ms": 5000
+  }
+}
