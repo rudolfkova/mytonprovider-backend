@@ -41,7 +41,15 @@ type Client interface {
 func (c *client) GetTransactions(ctx context.Context, addr string, lastProcessedLT uint64) (txs []*Transaction, err error) {
 	log := c.logger.With("method", "GetTransactions")
 	api := ton.NewAPIClient(c.clientPool).WithTimeout(singleQueryTimeout).WithRetry(retries)
-	a, _ := address.ParseAddr(addr)
+	a, err := address.ParseAddr(addr)
+	if err != nil {
+		err = fmt.Errorf("parse address %q: %w", addr, err)
+		return
+	}
+	if a == nil {
+		err = fmt.Errorf("parse address %q: nil address", addr)
+		return
+	}
 	block, err := api.GetMasterchainInfo(ctx)
 	if err != nil {
 		err = fmt.Errorf("get masterchain info err: %w", err)

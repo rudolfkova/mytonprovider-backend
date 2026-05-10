@@ -1,0 +1,89 @@
+{
+  "jobId": "dump-1778454745",
+  "agentId": "test-agent",
+  "location": "local",
+  "startedAtUnix": "1778454745",
+  "finishedAtUnix": "1778454775",
+  "results": [
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQD4NSu-1jmHRtSxl-cXRujEEBsjoZFT7K7sWv0Zt8yb4sP2",
+      "bagId": "6a955cf24c43eaf10a02c248abb9f21c5870006a253d32774c4be806aeaf0dca",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 1357
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQDXxUXK_b3LrC0oS90PttTfArQ8y1hJELakrAaM2DMbt2v6",
+      "bagId": "e7a37d01cc2544984db5ec6dfd29ddef6f4f4ffe56a094c157853b891ceb43ae",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 3609
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQAA0jJhmIj6VKPbAGlge4SWHPenC1_OqwUw9a75GMJ8iCsa",
+      "bagId": "fac6edb98f951bf824dfc29f34ba7520b48679864e3fb03075dd44031fe50d5a",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 3044
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQC89p8NJDtWmqVx6uclLy9YNIm0AhC4NZI74Ee17rZhXR_r",
+      "bagId": "3df15ce1d82efb57aa32556212e80011ae5217e878dafb00cd5231c139b41c2e",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 437
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQAmzOGA0L6UV1Htwpu5GNf94JcSBwyGimxyRFAY4tTm4bkT",
+      "bagId": "47bd916763a411b1d3fecf6ff176aac6b1ef5abde688495324c6c2101ed59709",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 3091
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQDxgVyfXh4EPVb7CtPDn5Ofj7F-Je9N6g_v3T_RRzHZYDr4",
+      "bagId": "5b95862e172ab0e0ccbb00d4e22a29f0793af641ae0af2e34216b8652928b505",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 3256
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQCyfrBtly0XSjWPnvL6QsK1Pkz2S44kW-GLrhUuED6UeWjE",
+      "bagId": "690fcab1839eca259cf935571a891e5f2a6493f0006fd03d8b1154d94888442d",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 2982
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQDqvcsH7685dHQB5BHSEIJbXwL197pksmXHuds8Pd82QCYH",
+      "bagId": "6fc4b248f0609ac1ce67aee622a86401c835b7c1bcb8190d6c5d4ccc68ff031c",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 3205
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQBS2uduoCo3b6QRC6E2BOmf8elPc6ymOTog-brCGHcfBD0d",
+      "bagId": "2214e7abeccdf2f7b6806f36e290f68982606089c25062d4c617cdcaa7bcb4a9",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 3211
+    },
+    {
+      "providerPubkey": "0bf99991c3830b5cad00f01d3659dec9e9ae353f0925a555a5b5a30d96eb4e5a",
+      "providerAddress": "EQDuksozsgnxnpvRf0KvVRdn_CjprQJgvyDG4rZ1AmgdJKN_",
+      "contractAddress": "EQCj7mlOFuoAAO7hSwDvM8jOGMZftFTacITTXJdDAGrYhhzp",
+      "bagId": "ee09edf188136bf0338f5222e7e731665f1699d594ed18c2442c03f1d6fe6782",
+      "reasonCode": "VALID_STORAGE_PROOF",
+      "latencyMs": 424
+    }
+  ]
+}

@@ -1,5 +1,9 @@
 version: "3"
 
+# Load DB_* and other vars for coordinator helpers (optional file — ignored if absent in your Task version)
+dotenv:
+  - .env
+
 tasks:
   proto:tools:
     desc: Install protobuf Go generators
@@ -114,3 +118,44 @@ tasks:
 
         echo "=== SUMMARY ==="
         echo "3/3 cases passed"
+
+  coordinator:dump:runchecks:
+    desc: Dump RunChecks JSON (default in-memory store; scans chain, no Postgres). Use --storage=postgres + DB_* for DB
+    cmds:
+      - go run ./coordinator/cmd/dump-runchecks --limit 1 --out agent/tests/grpc/runchecks-live.json
+
+  agent:test:live:
+    desc: Run one real dumped request against running test agent
+    deps:
+      - coordinator:dump:runchecks
+    cmds:
+      - |
+        set -euo pipefail
+        if ! command -v grpcurl >/dev/null 2>&1; then
+          echo "grpcurl is required. Install: https://github.com/fullstorydev/grpcurl#installation"
+          exit 1
+        fi
+        mkdir -p agent/tests/grpc/reports
+        LAST_JSON="agent/tests/grpc/reports/runchecks-live-last.json"
+        # -d @ must stay inside a shell block: bare @ in a Task cmd line is reserved syntax
+        grpcurl -insecure \
+          -import-path contracts/proto \
+          -proto providerchecks/v1/provider_checks.proto \
+          -H "authorization: Bearer test-token" \
+          -d @ \
+          127.0.0.1:8443 \
+          providerchecks.v1.ProviderChecksService/RunChecks \
+          < agent/tests/grpc/runchecks-live.json | tee "$LAST_JSON"
+        if command -v jq >/dev/null 2>&1; then
+          TOTAL="$(jq '.results | length' "$LAST_JSON")"
+          OK="$(jq '[.results[] | select(.reasonCode == "VALID_STORAGE_PROOF" or .reasonCode == 1)] | length' "$LAST_JSON")"
+          NOT_OK=$((TOTAL - OK))
+          echo ""
+          echo "=== RunChecks contract summary ==="
+          echo "  valid (VALID_STORAGE_PROOF): $OK"
+          echo "  other / failed:            $NOT_OK"
+          echo "  total results:              $TOTAL"
+        else
+          echo ""
+          echo "(Install jq to print contract pass/fail summary.)"
+        fi
