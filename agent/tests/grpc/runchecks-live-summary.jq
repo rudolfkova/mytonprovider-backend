@@ -50,10 +50,11 @@ def reason_ru:
     | map({(.providerPubkey): .})
     | add // {}) as $geo
 | (.results // []) as $results
-| "=== По провайдерам: регион (по IP storage) → итоги по контрактам ===",
+| "=== По провайдерам: pubkey/address → регион → итоги по контрактам ===",
   (
     ($results | group_by(.providerPubkey) | sort_by(.[0].providerPubkey))[]
     | (.[0].providerPubkey) as $pk
+    | (.[0].providerAddress // "?") as $paddr
     | ($geo[$pk] // null) as $g
     | (
         if ($g != null) and (($g | type) == "object") then
@@ -82,6 +83,6 @@ def reason_ru:
         | map(.[0] as $lab | "\($lab) × \(length)")
         | join(", ")
       ) as $reasons
-    | "  \($region)\n     \($reasons)"
+    | "  provider: \($pk) · \($paddr)\n  region:   \($region)\n  reasons:  \($reasons)"
   ),
   ""
