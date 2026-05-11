@@ -167,3 +167,48 @@ tasks:
           echo ""
           echo "(Install jq to print contract pass/fail summary.)"
         fi
+
+  agent:test:live:replay:
+    desc: Replay existing runchecks-live.json against running test agent (no new dump)
+    cmds:
+      - |
+        set -euo pipefail
+        if ! command -v grpcurl >/dev/null 2>&1; then
+          echo "grpcurl is required. Install: https://github.com/fullstorydev/grpcurl#installation"
+          exit 1
+        fi
+        if [[ ! -f agent/tests/grpc/runchecks-live.json ]]; then
+          echo "agent/tests/grpc/runchecks-live.json not found. Generate it first via: task coordinator:dump:runchecks"
+          exit 1
+        fi
+        mkdir -p agent/tests/grpc/reports
+        LAST_JSON="agent/tests/grpc/reports/runchecks-live-last.json"
+        grpcurl -insecure \
+          -import-path contracts/proto \
+          -proto providerchecks/v1/provider_checks.proto \
+          -H "authorization: Bearer test-token" \
+          -d @ \
+          127.0.0.1:8443 \
+          providerchecks.v1.ProviderChecksService/RunChecks \
+          < agent/tests/grpc/runchecks-live.json | tee "$LAST_JSON"
+        if command -v jq >/dev/null 2>&1; then
+          TOTAL="$(jq '.results | length' "$LAST_JSON")"
+          OK="$(jq '[.results[] | select(.reasonCode == "VALID_STORAGE_PROOF" or .reasonCode == 1)] | length' "$LAST_JSON")"
+          NOT_OK=$((TOTAL - OK))
+          echo ""
+          echo "=== RunChecks contract summary ==="
+          echo "  valid (VALID_STORAGE_PROOF): $OK"
+          echo "  other / failed:            $NOT_OK"
+          echo "  total results:              $TOTAL"
+          META_JSON="agent/tests/grpc/runchecks-live-meta.json"
+          if [[ ! -f "$META_JSON" ]]; then
+            EMPTY_META="$(mktemp)"
+            printf '%s\n' '{"providers":[]}' > "$EMPTY_META"
+            META_JSON="$EMPTY_META"
+          fi
+          echo ""
+          jq -r -f agent/tests/grpc/runchecks-live-summary.jq --slurpfile META "$META_JSON" "$LAST_JSON"
+        else
+          echo ""
+          echo "(Install jq to print contract pass/fail summary.)"
+        fi
