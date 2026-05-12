@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
-	providerchecksv1 "github.com/grach/mytonprovider-contracts/gen/go/providerchecks/v1"
+	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
 	"mytonprovider-agent/internal/checker"
 	"mytonprovider-agent/internal/config"
 )

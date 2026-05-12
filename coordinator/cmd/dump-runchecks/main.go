@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"mytonprovider-coordinator/internal/clients/ifconfig"
@@ -96,34 +96,61 @@ func run() error {
 
 	switch storage {
 	case "memory":
-		memP := providersinmemory.NewRepository()
-		memS := systeminmemory.NewRepository()
-		worker := providersmaster.NewWorker(
-			memP,
-			memS,
-			ton,
-			providerClient,
-			dhtClient,
-			ipinfo,
-			cfg.TON.MasterAddress,
-			cfg.TON.BatchSize,
-			logger,
-		)
-		if worker == nil {
-			return fmt.Errorf("worker is nil")
-		}
-		if _, err := worker.CollectNewProviders(ctx); err != nil {
-			return fmt.Errorf("CollectNewProviders: %w", err)
-		}
-		if _, err := worker.CollectProvidersNewStorageContracts(ctx); err != nil {
-			return fmt.Errorf("CollectProvidersNewStorageContracts: %w", err)
-		}
-		logger.Info("memory sync finished", "master", cfg.TON.MasterAddress)
+		var lastErr error
+		for attempt := 1; attempt <= memoryDumpMaxAttempts; attempt++ {
+			memP := providersinmemory.NewRepository()
+			memS := systeminmemory.NewRepository()
+			worker := providersmaster.NewWorker(
+				memP,
+				memS,
+				ton,
+				providerClient,
+				dhtClient,
+				ipinfo,
+				cfg.TON.MasterAddress,
+				cfg.TON.BatchSize,
+				logger,
+			)
+			if worker == nil {
+				return fmt.Errorf("worker is nil")
+			}
+			if _, err := worker.CollectNewProviders(ctx); err != nil {
+				return fmt.Errorf("CollectNewProviders: %w", err)
+			}
+			if _, err := worker.CollectProvidersNewStorageContracts(ctx); err != nil {
+				return fmt.Errorf("CollectProvidersNewStorageContracts: %w", err)
+			}
+			logger.Info("memory sync finished", "master", cfg.TON.MasterAddress, "attempt", attempt, "max_attempts", memoryDumpMaxAttempts)
 
-		builder := providersmaster.NewRequestBuilder(
-			memP, memS, ton, providerClient, dhtClient, ipinfo, logger,
-		)
-		return writeRunChecksDump(ctx, builder, ipinfo, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS)
+			builder := providersmaster.NewRequestBuilder(
+				memP, memS, ton, providerClient, dhtClient, ipinfo, logger,
+			)
+			lastErr = writeRunChecksDump(ctx, builder, ipinfo, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS)
+			if lastErr == nil {
+				return nil
+			}
+			if attempt == memoryDumpMaxAttempts || !shouldRetryMemoryDump(lastErr) {
+				return lastErr
+			}
+
+			logger.Warn(
+				"memory dump produced no usable contracts, retrying",
+				"attempt", attempt,
+				"max_attempts", memoryDumpMaxAttempts,
+				"retry_delay", memoryDumpRetryDelay.String(),
+				"error", lastErr,
+			)
+
+			timer := time.NewTimer(memoryDumpRetryDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+
+		return lastErr
 
 	case "postgres":
 		connPool, err := connectPostgres(ctx, cfg, logger)
@@ -164,45 +191,74 @@ type runChecksMetaFile struct {
 	Providers   []providerGeoMetaRow `json:"providers"`
 }
 
+const (
+	geoLookupTimeout = 10 * time.Second
+	geoLookupDelay   = 1 * time.Second
+	memoryDumpMaxAttempts = 3
+	memoryDumpRetryDelay  = 3 * time.Second
+)
+
+type providerGeoLookup struct {
+	Country        string
+	CountryISO     string
+	City           string
+	GeoLookupError string
+}
+
 func writeProviderGeoMeta(ctx context.Context, ipinfo ifconfig.IFConfig, req *providersmaster.RunChecksRequestPayload, metaPath string, logger *slog.Logger) error {
 	if req == nil || len(req.Providers) == 0 {
 		return nil
 	}
 	rows := make([]providerGeoMetaRow, len(req.Providers))
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 10)
+	lookupCache := make(map[string]providerGeoLookup, len(req.Providers))
+	var lookedUpIPs int
 	for i := range req.Providers {
-		i := i
 		p := req.Providers[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			r := providerGeoMetaRow{
-				ProviderPubkey:  p.ProviderPubkey,
-				ProviderAddress: p.ProviderAddress,
-				StorageIP:       p.StorageEndpoint.IP,
-			}
-			ip := strings.TrimSpace(p.StorageEndpoint.IP)
-			if ip == "" {
-				r.GeoLookupError = "empty storage IP"
-				rows[i] = r
-				return
-			}
-			info, err := ipinfo.GetIPInfo(ctx, ip)
-			if err != nil {
-				r.GeoLookupError = err.Error()
-			} else if info != nil {
-				r.Country = info.Country
-				r.CountryISO = info.CountryISO
-				r.City = info.City
-			}
+		r := providerGeoMetaRow{
+			ProviderPubkey:  p.ProviderPubkey,
+			ProviderAddress: p.ProviderAddress,
+			StorageIP:       p.StorageEndpoint.IP,
+		}
+		ip := strings.TrimSpace(p.StorageEndpoint.IP)
+		if ip == "" {
+			r.GeoLookupError = "empty storage IP"
 			rows[i] = r
-		}()
+			continue
+		}
+
+		lookup, ok := lookupCache[ip]
+		if !ok {
+			if lookedUpIPs > 0 {
+				timer := time.NewTimer(geoLookupDelay)
+				select {
+				case <-ctx.Done():
+					timer.Stop()
+					return ctx.Err()
+				case <-timer.C:
+				}
+			}
+
+			timeoutCtx, cancel := context.WithTimeout(ctx, geoLookupTimeout)
+			info, err := ipinfo.GetIPInfo(timeoutCtx, ip)
+			cancel()
+
+			if err != nil {
+				lookup.GeoLookupError = err.Error()
+			} else if info != nil {
+				lookup.Country = info.Country
+				lookup.CountryISO = info.CountryISO
+				lookup.City = info.City
+			}
+			lookupCache[ip] = lookup
+			lookedUpIPs++
+		}
+
+		r.Country = lookup.Country
+		r.CountryISO = lookup.CountryISO
+		r.City = lookup.City
+		r.GeoLookupError = lookup.GeoLookupError
+		rows[i] = r
 	}
-	wg.Wait()
 
 	out := runChecksMetaFile{
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
@@ -284,4 +340,10 @@ func writeRunChecksDump(
 		}
 	}
 	return nil
+}
+
+func shouldRetryMemoryDump(err error) bool {
+	return errors.Is(err, providersmaster.ErrNoStorageContracts) ||
+		errors.Is(err, providersmaster.ErrNoResolvedProviderEndpoints) ||
+		errors.Is(err, providersmaster.ErrNoValidProvidersForRunChecks)
 }

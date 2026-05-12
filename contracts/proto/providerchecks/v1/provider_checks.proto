@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package providerchecks.v1;
 
-option go_package = "github.com/grach/mytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1";
+option go_package = "mytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1";
 
 // ProviderChecksService runs network-dependent provider BAG checks
 // from a single agent location. Coordinator performs 1-of-3 aggregation.

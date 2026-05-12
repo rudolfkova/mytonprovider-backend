@@ -22,15 +22,15 @@ import (
 	"github.com/xssnick/tonutils-go/tvm/cell"
 	"github.com/xssnick/tonutils-storage/storage"
 
-	providerchecksv1 "github.com/grach/mytonprovider-contracts/gen/go/providerchecks/v1"
+	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
 	"mytonprovider-agent/internal/reason"
 )
 
 const (
-	defaultPingTimeout          = 15 * time.Second
-	defaultRLDPTimeout          = 25 * time.Second
+	defaultPingTimeout          = 7 * time.Second
+	defaultRLDPTimeout          = 2 * time.Second
 	skipFailureThresholdPercent = 20.0
-	minFailureThreshold   uint32 = 25
+	pingCacheTTL                = 2 * time.Second
 	interBagDelay                = 100 * time.Millisecond
 )
 
@@ -46,6 +46,10 @@ type jobProgress struct {
 	logger    *slog.Logger
 	processed atomic.Uint64
 	nextLogAt atomic.Uint64
+}
+
+type peerPingState struct {
+	lastSuccessAt time.Time
 }
 
 func New(maxConcurrentProviders int, logger *slog.Logger) (*Checker, error) {
@@ -145,11 +149,8 @@ func (c *Checker) checkProviderFiles(
 	detailsStats := make(map[string]int)
 	results := make([]*providerchecksv1.ContractCheckResult, 0, len(contracts))
 
-	// Short-circuit dead providers to keep job runtime bounded.
+	// Keep the same dead-provider short-circuit as the old coordinator.
 	maxFailureThreshold := uint32(float32(len(contracts)) / 100.0 * skipFailureThresholdPercent)
-	if maxFailureThreshold < minFailureThreshold {
-		maxFailureThreshold = minFailureThreshold
-	}
 	var failsInARow uint32
 
 	gw := adnl.NewGateway(c.prv)
@@ -189,6 +190,7 @@ func (c *Checker) checkProviderFiles(
 
 	rl := rldp.NewClientV2(peer)
 	defer rl.Close()
+	pingState := &peerPingState{lastSuccessAt: time.Now()}
 
 	for _, contract := range contracts {
 		if contract == nil {
@@ -207,7 +209,7 @@ func (c *Checker) checkProviderFiles(
 		}
 
 		pieceStarted := time.Now()
-		reasonCode, details := c.checkPiece(ctx, rl, contract.GetBagId(), timeouts, log)
+		reasonCode, details := c.checkPiece(ctx, rl, contract.GetBagId(), timeouts, pingState, log)
 		latency := uint32(time.Since(pieceStarted).Milliseconds())
 
 		results = append(results, makeResult(provider, contract, reasonCode, latency, details))
@@ -250,6 +252,7 @@ func (c *Checker) checkPiece(
 	rl *rldp.RLDP,
 	bagID string,
 	timeouts *providerchecksv1.CheckTimeouts,
+	pingState *peerPingState,
 	log *slog.Logger,
 ) (reason.Code, string) {
 	log = log.With("bag_id", bagID)
@@ -257,6 +260,9 @@ func (c *Checker) checkPiece(
 	peer, ok := rl.GetADNL().(adnl.Peer)
 	if !ok {
 		log.Error("failed to get ADNL peer")
+		if pingState != nil {
+			pingState.invalidate()
+		}
 		return reason.UnknownPeer, "stage=get_adnl_peer error=adnl peer cast failed"
 	}
 
@@ -264,6 +270,23 @@ func (c *Checker) checkPiece(
 	peer.Reinit()
 	// Peer can be closed after some time, so for extra stability we reinit before each operation if needed.
 	est := time.Now()
+
+	pingTimeout := timeoutFromMs(timeouts.GetPingMs(), defaultPingTimeout)
+	if pingState == nil || pingState.shouldProbe(time.Now()) {
+		pingCtx, pingCancel := context.WithTimeout(ctx, pingTimeout)
+		_, err := peer.Ping(pingCtx)
+		pingCancel()
+		if err != nil {
+			log.Debug("ping to provider failed", "error", err)
+			if pingState != nil {
+				pingState.invalidate()
+			}
+			return reason.PingFailed, fmt.Sprintf("stage=piece_ping timeout_ms=%d error=%s", pingTimeout.Milliseconds(), err.Error())
+		}
+		if pingState != nil {
+			pingState.markSuccess(time.Now())
+		}
+	}
 
 	bag, decodeErr := hex.DecodeString(bagID)
 	if decodeErr != nil {
@@ -284,12 +307,16 @@ func (c *Checker) checkPiece(
 
 	// Get torrent info.
 	var res storage.TorrentInfoContainer
-	infoCtx, cancelInfo := context.WithTimeout(ctx, timeoutFromMs(timeouts.GetRldpMs(), defaultRLDPTimeout))
+	rldpTimeout := timeoutFromMs(timeouts.GetRldpMs(), defaultRLDPTimeout)
+	infoCtx, cancelInfo := context.WithTimeout(ctx, rldpTimeout)
 	err = rl.DoQuery(infoCtx, 32<<20, overlay.WrapQuery(over, &storage.GetTorrentInfo{}), &res)
 	cancelInfo()
 	if err != nil {
 		log.Debug("failed to get torrent info from provider", "error", err)
-		return reason.GetInfoFailed, fmt.Sprintf("stage=get_torrent_info timeout_ms=%d error=%s", timeoutFromMs(timeouts.GetRldpMs(), defaultRLDPTimeout).Milliseconds(), err.Error())
+		if pingState != nil {
+			pingState.invalidate()
+		}
+		return reason.GetInfoFailed, fmt.Sprintf("stage=get_torrent_info timeout_ms=%d error=%s", rldpTimeout.Milliseconds(), err.Error())
 	}
 
 	cl, err := cell.FromBOC(res.Data)
@@ -325,12 +352,15 @@ func (c *Checker) checkPiece(
 
 	// Get piece proof and validate.
 	var piece storage.Piece
-	pieceCtx, cancelPiece := context.WithTimeout(ctx, timeoutFromMs(timeouts.GetRldpMs(), defaultRLDPTimeout))
+	pieceCtx, cancelPiece := context.WithTimeout(ctx, rldpTimeout)
 	err = rl.DoQuery(pieceCtx, 32<<20, overlay.WrapQuery(over, &storage.GetPiece{PieceID: pieceID}), &piece)
 	cancelPiece()
 	if err != nil {
 		log.Debug("failed to get piece from provider", "error", err)
-		return reason.CantGetPiece, fmt.Sprintf("stage=get_piece piece_id=%d timeout_ms=%d error=%s", pieceID, timeoutFromMs(timeouts.GetRldpMs(), defaultRLDPTimeout).Milliseconds(), err.Error())
+		if pingState != nil {
+			pingState.invalidate()
+		}
+		return reason.CantGetPiece, fmt.Sprintf("stage=get_piece piece_id=%d timeout_ms=%d error=%s", pieceID, rldpTimeout.Milliseconds(), err.Error())
 	}
 
 	proof, err := cell.FromBOC(piece.Proof)
@@ -344,8 +374,32 @@ func (c *Checker) checkPiece(
 		log.Debug("proof check failed", "error", err)
 		return reason.ProofCheckFailed, fmt.Sprintf("stage=check_proof root_hash=%x error=%s", info.RootHash, err.Error())
 	}
+	if pingState != nil {
+		pingState.markSuccess(time.Now())
+	}
 
 	return reason.ValidStorageProof, ""
+}
+
+func (s *peerPingState) shouldProbe(now time.Time) bool {
+	if s == nil || s.lastSuccessAt.IsZero() {
+		return true
+	}
+	return now.Sub(s.lastSuccessAt) >= pingCacheTTL
+}
+
+func (s *peerPingState) markSuccess(now time.Time) {
+	if s == nil {
+		return
+	}
+	s.lastSuccessAt = now
+}
+
+func (s *peerPingState) invalidate() {
+	if s == nil {
+		return
+	}
+	s.lastSuccessAt = time.Time{}
 }
 
 func fillProviderResults(

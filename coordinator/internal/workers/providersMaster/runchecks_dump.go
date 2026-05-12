@@ -3,6 +3,7 @@ package providersmaster
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -13,6 +14,12 @@ import (
 	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
 
 	"mytonprovider-coordinator/internal/models/db"
+)
+
+var (
+	ErrNoStorageContracts           = errors.New("no storage contracts available")
+	ErrNoResolvedProviderEndpoints  = errors.New("no providers with resolved endpoints")
+	ErrNoValidProvidersForRunChecks = errors.New("no valid providers collected for RunChecksRequest")
 )
 
 type RunChecksRequestPayload struct {
@@ -86,7 +93,7 @@ func (w *providersMasterWorker) BuildRunChecksRequest(ctx context.Context, jobID
 		return nil, fmt.Errorf("get storage contracts: %w", err)
 	}
 	if len(storageContracts) == 0 {
-		return nil, fmt.Errorf("no storage contracts available")
+		return nil, ErrNoStorageContracts
 	}
 
 	availableProvidersIPs, err := w.resolveProvidersIPsNoPersist(ctx, storageContracts)
@@ -94,7 +101,7 @@ func (w *providersMasterWorker) BuildRunChecksRequest(ctx context.Context, jobID
 		return nil, fmt.Errorf("resolve provider IPs: %w", err)
 	}
 	if len(availableProvidersIPs) == 0 {
-		return nil, fmt.Errorf("no providers with resolved endpoints")
+		return nil, ErrNoResolvedProviderEndpoints
 	}
 
 	contractsByProvider := make(map[string][]db.ContractToProviderRelation)
@@ -164,7 +171,7 @@ func (w *providersMasterWorker) BuildRunChecksRequest(ctx context.Context, jobID
 	}
 
 	if len(resp.Providers) == 0 {
-		return nil, fmt.Errorf("no valid providers collected for RunChecksRequest")
+		return nil, ErrNoValidProvidersForRunChecks
 	}
 
 	return resp, nil

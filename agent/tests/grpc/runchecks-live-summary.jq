@@ -44,6 +44,13 @@ def reason_ru:
         }[$k] // $k
       );
 
+def geo_warning_suffix:
+  (.geoLookupError // "" | tostring) as $err
+  | if ($err | length) == 0 or ($err | test("429 Too Many Requests"))
+    then ""
+    else " · ⚠ гео: " + ($err | .[0:80])
+    end;
+
 ($META[0] // {providers: []}) as $meta
 | ($meta.providers
     | map(select(.providerPubkey != null and .providerPubkey != ""))
@@ -68,11 +75,7 @@ def reason_ru:
             )
           + " · "
           + (($g.storageIp // "?") | tostring)
-          + (
-              if (($g.geoLookupError // "") | tostring | length) > 0
-              then " · ⚠ гео: " + (($g.geoLookupError | tostring | .[0:80]))
-              else "" end
-            )
+          + ($g | geo_warning_suffix)
         else
           ("регион неизвестен (нет meta или pubkey) · " + ($pk | .[0:24]) + "…")
         end
