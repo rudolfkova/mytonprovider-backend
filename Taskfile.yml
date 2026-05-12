@@ -65,7 +65,7 @@ tasks:
         AGENT_AUTH_TOKEN=test-token \
         AGENT_TLS_CERT_FILE=agent/tests/certs/server.crt \
         AGENT_TLS_KEY_FILE=agent/tests/certs/server.key \
-        AGENT_MAX_CONCURRENT_PROVIDERS=30 \
+        AGENT_MAX_CONCURRENT_PROVIDERS=40 \
         go run ./agent/cmd/agent
 
   agent:test:smoke:
@@ -122,7 +122,7 @@ tasks:
   coordinator:dump:runchecks:
     desc: Dump RunChecks JSON + runchecks-live-meta.json (geo по storage IP). Default in-memory; use --storage=postgres + DB_* for DB
     cmds:
-      - go run ./coordinator/cmd/dump-runchecks --limit 1000 --out agent/tests/grpc/runchecks-live.json
+      - go run ./coordinator/cmd/dump-runchecks --limit 50 --out agent/tests/grpc/runchecks-live.json
 
   agent:test:live:
     desc: Run one real dumped request against running test agent

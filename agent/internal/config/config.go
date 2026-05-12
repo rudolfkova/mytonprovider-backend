@@ -10,7 +10,7 @@ const (
 	defaultListenAddr             = ":8443"
 	defaultAgentID                = "agent"
 	defaultLocation               = "unknown"
-	defaultMaxConcurrentProviders = 30
+	defaultMaxConcurrentProviders = 40
 )
 
 type Config struct {

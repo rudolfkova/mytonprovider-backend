@@ -66,7 +66,7 @@ func (s *service) RunChecks(ctx context.Context, req *providerchecksv1.RunChecks
 	log := s.logger.With("job_id", req.GetJobId(), "agent_id", s.agentID, "location", s.location)
 	log.Debug("start processing RunChecks", "providers", len(req.GetProviders()))
 
-	results := s.checker.Run(ctx, req.GetProviders(), req.GetTimeouts())
+	results := s.checker.Run(ctx, req.GetProviders(), req.GetTimeouts(), log)
 
 	resp := &providerchecksv1.RunChecksResponse{
 		JobId:          req.GetJobId(),
@@ -86,7 +86,39 @@ func (s *service) RunChecks(ctx context.Context, req *providerchecksv1.RunChecks
 		})
 	}
 
-	log.Info("RunChecks completed", "results", len(resp.Results))
+	contractsTotal := 0
+	for _, p := range req.GetProviders() {
+		if p != nil {
+			contractsTotal += len(p.GetContracts())
+		}
+	}
+
+	reasonCounts := make(map[string]int)
+	errorSignatures := make(map[string]int)
+	for _, r := range resp.Results {
+		if r == nil {
+			continue
+		}
+		reason := r.GetReasonCode().String()
+		reasonCounts[reason]++
+		if r.GetReasonCode() != providerchecksv1.ReasonCode_VALID_STORAGE_PROOF {
+			d := r.GetDetails()
+			if d == "" {
+				d = "no_details"
+			}
+			errorSignatures[fmt.Sprintf("%s | %s", reason, d)]++
+		}
+	}
+
+	log.Info(
+		"RunChecks completed",
+		"providers_total", len(req.GetProviders()),
+		"contracts_total", contractsTotal,
+		"results_total", len(resp.Results),
+		"duration_ms", time.Since(started).Milliseconds(),
+		"reason_counts", reasonCounts,
+		"error_signatures", errorSignatures,
+	)
 	return resp, nil
 }
 
