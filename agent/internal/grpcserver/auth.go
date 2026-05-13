@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -18,6 +19,10 @@ func authInterceptor(expectedToken string) grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
+		// grpc.health.v1.Health/Check must work without Bearer (Kubernetes grpc_health_probe, etc.).
+		if info.FullMethod == grpc_health_v1.Health_Check_FullMethodName {
+			return handler(ctx, req)
+		}
 		if !isAuthorized(ctx, expectedToken) {
 			return nil, status.Error(codes.Unauthenticated, "invalid authorization token")
 		}

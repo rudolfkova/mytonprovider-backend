@@ -67,7 +67,20 @@ AGENT_ADNL_PORT=16167
 
 Mount `server.crt` and `server.key` read-only into the container.
 
-## 4) Coordinator trust
+## 4) gRPC health (`grpc.health.v1.Health`)
+
+The agent registers the standard **gRPC Health Checking** service on the same TLS port as `RunChecks` / `RunStorageRates`.
+
+- **`grpc.health.v1.Health/Check`** does **not** require the coordinator `Authorization: Bearer` header (so probes can stay tokenless).
+- After successful startup the overall service name `""` is **`SERVING`**; on process shutdown cleanup sets **`NOT_SERVING`** before closing TON transport.
+
+Example with [grpc_health_probe](https://github.com/grpc-ecosystem/grpc-health-probe) against a test agent (adjust CA / `-tls-no-verify` for your setup):
+
+```bash
+grpc_health_probe -addr=127.0.0.1:8443 -tls -tls-no-verify
+```
+
+## 5) Coordinator trust
 
 Coordinator gRPC client must trust the CA cert (`ca.crt`) that signed agent server certs.
 Do not copy CA private key to any server.

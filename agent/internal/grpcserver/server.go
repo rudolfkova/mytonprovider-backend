@@ -11,6 +11,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
 	"mytonprovider-agent/internal/checker"
@@ -60,6 +62,10 @@ func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
 		grpc.UnaryInterceptor(authInterceptor(cfg.AuthToken)),
 	)
 
+	healthSrv := health.NewServer()
+	grpc_health_v1.RegisterHealthServer(grpcServer, healthSrv)
+	healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+
 	providerchecksv1.RegisterProviderChecksServiceServer(grpcServer, &service{
 		checker:            checks,
 		ratesTransport:     ratesTransport,
@@ -70,6 +76,7 @@ func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
 	})
 
 	cleanup := func() {
+		healthSrv.SetServingStatus("", grpc_health_v1.HealthCheckResponse_NOT_SERVING)
 		if err := ratesTransport.Close(); err != nil {
 			logger.Warn("ton transport close", "error", err)
 		}
