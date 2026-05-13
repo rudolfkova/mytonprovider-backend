@@ -5,6 +5,7 @@ go 1.26.2
 require (
 	github.com/xssnick/tonutils-go v1.16.0
 	github.com/xssnick/tonutils-storage v1.4.1
+	github.com/xssnick/tonutils-storage-provider v0.4.0
 	google.golang.org/grpc v1.81.0
 	mytonprovider-contracts v0.0.0
 )

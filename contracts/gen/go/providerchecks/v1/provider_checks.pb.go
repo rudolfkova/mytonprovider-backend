@@ -464,6 +464,339 @@ func (x *CheckTimeouts) GetTotalMs() uint32 {
 	return 0
 }
 
+type StorageRatesTimeouts struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Per-provider GetStorageRates deadline; 0 = agent default (see implementation).
+	QueryTimeoutMs uint32 `protobuf:"varint,1,opt,name=query_timeout_ms,json=queryTimeoutMs,proto3" json:"query_timeout_ms,omitempty"`
+	// Optional wall-clock cap for the entire RPC (same idea as CheckTimeouts.total_ms).
+	TotalMs       uint32 `protobuf:"varint,2,opt,name=total_ms,json=totalMs,proto3" json:"total_ms,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StorageRatesTimeouts) Reset() {
+	*x = StorageRatesTimeouts{}
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StorageRatesTimeouts) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StorageRatesTimeouts) ProtoMessage() {}
+
+func (x *StorageRatesTimeouts) ProtoReflect() protoreflect.Message {
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StorageRatesTimeouts.ProtoReflect.Descriptor instead.
+func (*StorageRatesTimeouts) Descriptor() ([]byte, []int) {
+	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *StorageRatesTimeouts) GetQueryTimeoutMs() uint32 {
+	if x != nil {
+		return x.QueryTimeoutMs
+	}
+	return 0
+}
+
+func (x *StorageRatesTimeouts) GetTotalMs() uint32 {
+	if x != nil {
+		return x.TotalMs
+	}
+	return 0
+}
+
+// RunStorageRatesRequest must stay within the agent max pubkey limit (see agent validation).
+type RunStorageRatesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	JobId string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	// Hex-encoded 32-byte provider ADNL public keys (64 hex chars), same as coordinator DB public_key.
+	ProviderPubkeys []string `protobuf:"bytes,2,rep,name=provider_pubkeys,json=providerPubkeys,proto3" json:"provider_pubkeys,omitempty"`
+	// Size passed to GetStorageRates (coordinator uses 1). 0 means 1.
+	QuerySize     uint64                `protobuf:"varint,3,opt,name=query_size,json=querySize,proto3" json:"query_size,omitempty"`
+	Timeouts      *StorageRatesTimeouts `protobuf:"bytes,4,opt,name=timeouts,proto3" json:"timeouts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RunStorageRatesRequest) Reset() {
+	*x = RunStorageRatesRequest{}
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunStorageRatesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunStorageRatesRequest) ProtoMessage() {}
+
+func (x *RunStorageRatesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunStorageRatesRequest.ProtoReflect.Descriptor instead.
+func (*RunStorageRatesRequest) Descriptor() ([]byte, []int) {
+	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *RunStorageRatesRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *RunStorageRatesRequest) GetProviderPubkeys() []string {
+	if x != nil {
+		return x.ProviderPubkeys
+	}
+	return nil
+}
+
+func (x *RunStorageRatesRequest) GetQuerySize() uint64 {
+	if x != nil {
+		return x.QuerySize
+	}
+	return 0
+}
+
+func (x *RunStorageRatesRequest) GetTimeouts() *StorageRatesTimeouts {
+	if x != nil {
+		return x.Timeouts
+	}
+	return nil
+}
+
+type StorageRatesResult struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ProviderPubkey   string                 `protobuf:"bytes,1,opt,name=provider_pubkey,json=providerPubkey,proto3" json:"provider_pubkey,omitempty"`
+	Ok               bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	Available        bool                   `protobuf:"varint,3,opt,name=available,proto3" json:"available,omitempty"`
+	RatePerMbDay     []byte                 `protobuf:"bytes,4,opt,name=rate_per_mb_day,json=ratePerMbDay,proto3" json:"rate_per_mb_day,omitempty"`
+	MinBounty        []byte                 `protobuf:"bytes,5,opt,name=min_bounty,json=minBounty,proto3" json:"min_bounty,omitempty"`
+	SpaceAvailableMb uint64                 `protobuf:"varint,6,opt,name=space_available_mb,json=spaceAvailableMb,proto3" json:"space_available_mb,omitempty"`
+	MinSpan          uint32                 `protobuf:"varint,7,opt,name=min_span,json=minSpan,proto3" json:"min_span,omitempty"`
+	MaxSpan          uint32                 `protobuf:"varint,8,opt,name=max_span,json=maxSpan,proto3" json:"max_span,omitempty"`
+	LatencyMs        uint32                 `protobuf:"varint,9,opt,name=latency_ms,json=latencyMs,proto3" json:"latency_ms,omitempty"`
+	Details          string                 `protobuf:"bytes,10,opt,name=details,proto3" json:"details,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *StorageRatesResult) Reset() {
+	*x = StorageRatesResult{}
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StorageRatesResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StorageRatesResult) ProtoMessage() {}
+
+func (x *StorageRatesResult) ProtoReflect() protoreflect.Message {
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StorageRatesResult.ProtoReflect.Descriptor instead.
+func (*StorageRatesResult) Descriptor() ([]byte, []int) {
+	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StorageRatesResult) GetProviderPubkey() string {
+	if x != nil {
+		return x.ProviderPubkey
+	}
+	return ""
+}
+
+func (x *StorageRatesResult) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *StorageRatesResult) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
+}
+
+func (x *StorageRatesResult) GetRatePerMbDay() []byte {
+	if x != nil {
+		return x.RatePerMbDay
+	}
+	return nil
+}
+
+func (x *StorageRatesResult) GetMinBounty() []byte {
+	if x != nil {
+		return x.MinBounty
+	}
+	return nil
+}
+
+func (x *StorageRatesResult) GetSpaceAvailableMb() uint64 {
+	if x != nil {
+		return x.SpaceAvailableMb
+	}
+	return 0
+}
+
+func (x *StorageRatesResult) GetMinSpan() uint32 {
+	if x != nil {
+		return x.MinSpan
+	}
+	return 0
+}
+
+func (x *StorageRatesResult) GetMaxSpan() uint32 {
+	if x != nil {
+		return x.MaxSpan
+	}
+	return 0
+}
+
+func (x *StorageRatesResult) GetLatencyMs() uint32 {
+	if x != nil {
+		return x.LatencyMs
+	}
+	return 0
+}
+
+func (x *StorageRatesResult) GetDetails() string {
+	if x != nil {
+		return x.Details
+	}
+	return ""
+}
+
+type RunStorageRatesResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	JobId          string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	AgentId        string                 `protobuf:"bytes,2,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+	Location       string                 `protobuf:"bytes,3,opt,name=location,proto3" json:"location,omitempty"`
+	StartedAtUnix  int64                  `protobuf:"varint,4,opt,name=started_at_unix,json=startedAtUnix,proto3" json:"started_at_unix,omitempty"`
+	FinishedAtUnix int64                  `protobuf:"varint,5,opt,name=finished_at_unix,json=finishedAtUnix,proto3" json:"finished_at_unix,omitempty"`
+	Results        []*StorageRatesResult  `protobuf:"bytes,6,rep,name=results,proto3" json:"results,omitempty"`
+	Warnings       []*ErrorDetail         `protobuf:"bytes,7,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RunStorageRatesResponse) Reset() {
+	*x = RunStorageRatesResponse{}
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RunStorageRatesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RunStorageRatesResponse) ProtoMessage() {}
+
+func (x *RunStorageRatesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RunStorageRatesResponse.ProtoReflect.Descriptor instead.
+func (*RunStorageRatesResponse) Descriptor() ([]byte, []int) {
+	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RunStorageRatesResponse) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *RunStorageRatesResponse) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
+func (x *RunStorageRatesResponse) GetLocation() string {
+	if x != nil {
+		return x.Location
+	}
+	return ""
+}
+
+func (x *RunStorageRatesResponse) GetStartedAtUnix() int64 {
+	if x != nil {
+		return x.StartedAtUnix
+	}
+	return 0
+}
+
+func (x *RunStorageRatesResponse) GetFinishedAtUnix() int64 {
+	if x != nil {
+		return x.FinishedAtUnix
+	}
+	return 0
+}
+
+func (x *RunStorageRatesResponse) GetResults() []*StorageRatesResult {
+	if x != nil {
+		return x.Results
+	}
+	return nil
+}
+
+func (x *RunStorageRatesResponse) GetWarnings() []*ErrorDetail {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
 type RunChecksResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	JobId          string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -479,7 +812,7 @@ type RunChecksResponse struct {
 
 func (x *RunChecksResponse) Reset() {
 	*x = RunChecksResponse{}
-	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[5]
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -491,7 +824,7 @@ func (x *RunChecksResponse) String() string {
 func (*RunChecksResponse) ProtoMessage() {}
 
 func (x *RunChecksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[5]
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -504,7 +837,7 @@ func (x *RunChecksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunChecksResponse.ProtoReflect.Descriptor instead.
 func (*RunChecksResponse) Descriptor() ([]byte, []int) {
-	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{5}
+	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *RunChecksResponse) GetJobId() string {
@@ -571,7 +904,7 @@ type ContractCheckResult struct {
 
 func (x *ContractCheckResult) Reset() {
 	*x = ContractCheckResult{}
-	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[6]
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -583,7 +916,7 @@ func (x *ContractCheckResult) String() string {
 func (*ContractCheckResult) ProtoMessage() {}
 
 func (x *ContractCheckResult) ProtoReflect() protoreflect.Message {
-	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[6]
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -596,7 +929,7 @@ func (x *ContractCheckResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContractCheckResult.ProtoReflect.Descriptor instead.
 func (*ContractCheckResult) Descriptor() ([]byte, []int) {
-	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{6}
+	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ContractCheckResult) GetProviderPubkey() string {
@@ -659,7 +992,7 @@ type ErrorDetail struct {
 
 func (x *ErrorDetail) Reset() {
 	*x = ErrorDetail{}
-	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[7]
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -671,7 +1004,7 @@ func (x *ErrorDetail) String() string {
 func (*ErrorDetail) ProtoMessage() {}
 
 func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
-	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[7]
+	mi := &file_providerchecks_v1_provider_checks_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -684,7 +1017,7 @@ func (x *ErrorDetail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorDetail.ProtoReflect.Descriptor instead.
 func (*ErrorDetail) Descriptor() ([]byte, []int) {
-	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{7}
+	return file_providerchecks_v1_provider_checks_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ErrorDetail) GetCode() ErrorCode {
@@ -733,7 +1066,38 @@ const file_providerchecks_v1_provider_checks_proto_rawDesc = "" +
 	"\rCheckTimeouts\x12\x17\n" +
 	"\aping_ms\x18\x01 \x01(\rR\x06pingMs\x12\x17\n" +
 	"\arldp_ms\x18\x02 \x01(\rR\x06rldpMs\x12\x19\n" +
-	"\btotal_ms\x18\x03 \x01(\rR\atotalMs\"\xb1\x02\n" +
+	"\btotal_ms\x18\x03 \x01(\rR\atotalMs\"[\n" +
+	"\x14StorageRatesTimeouts\x12(\n" +
+	"\x10query_timeout_ms\x18\x01 \x01(\rR\x0equeryTimeoutMs\x12\x19\n" +
+	"\btotal_ms\x18\x02 \x01(\rR\atotalMs\"\xbe\x01\n" +
+	"\x16RunStorageRatesRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12)\n" +
+	"\x10provider_pubkeys\x18\x02 \x03(\tR\x0fproviderPubkeys\x12\x1d\n" +
+	"\n" +
+	"query_size\x18\x03 \x01(\x04R\tquerySize\x12C\n" +
+	"\btimeouts\x18\x04 \x01(\v2'.providerchecks.v1.StorageRatesTimeoutsR\btimeouts\"\xce\x02\n" +
+	"\x12StorageRatesResult\x12'\n" +
+	"\x0fprovider_pubkey\x18\x01 \x01(\tR\x0eproviderPubkey\x12\x0e\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x1c\n" +
+	"\tavailable\x18\x03 \x01(\bR\tavailable\x12%\n" +
+	"\x0frate_per_mb_day\x18\x04 \x01(\fR\fratePerMbDay\x12\x1d\n" +
+	"\n" +
+	"min_bounty\x18\x05 \x01(\fR\tminBounty\x12,\n" +
+	"\x12space_available_mb\x18\x06 \x01(\x04R\x10spaceAvailableMb\x12\x19\n" +
+	"\bmin_span\x18\a \x01(\rR\aminSpan\x12\x19\n" +
+	"\bmax_span\x18\b \x01(\rR\amaxSpan\x12\x1d\n" +
+	"\n" +
+	"latency_ms\x18\t \x01(\rR\tlatencyMs\x12\x18\n" +
+	"\adetails\x18\n" +
+	" \x01(\tR\adetails\"\xb6\x02\n" +
+	"\x17RunStorageRatesResponse\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x19\n" +
+	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1a\n" +
+	"\blocation\x18\x03 \x01(\tR\blocation\x12&\n" +
+	"\x0fstarted_at_unix\x18\x04 \x01(\x03R\rstartedAtUnix\x12(\n" +
+	"\x10finished_at_unix\x18\x05 \x01(\x03R\x0efinishedAtUnix\x12?\n" +
+	"\aresults\x18\x06 \x03(\v2%.providerchecks.v1.StorageRatesResultR\aresults\x12:\n" +
+	"\bwarnings\x18\a \x03(\v2\x1e.providerchecks.v1.ErrorDetailR\bwarnings\"\xb1\x02\n" +
 	"\x11RunChecksResponse\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x19\n" +
 	"\bagent_id\x18\x02 \x01(\tR\aagentId\x12\x1a\n" +
@@ -779,9 +1143,10 @@ const file_providerchecks_v1_provider_checks_proto_rawDesc = "" +
 	"\x0fNOT_FOUND_ERROR\x10\x02\x12\x15\n" +
 	"\x11DEADLINE_EXCEEDED\x10\x03\x12\x0f\n" +
 	"\vUNAVAILABLE\x10\x04\x12\f\n" +
-	"\bINTERNAL\x10\x052o\n" +
+	"\bINTERNAL\x10\x052\xd9\x01\n" +
 	"\x15ProviderChecksService\x12V\n" +
-	"\tRunChecks\x12#.providerchecks.v1.RunChecksRequest\x1a$.providerchecks.v1.RunChecksResponseBCZAmytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1b\x06proto3"
+	"\tRunChecks\x12#.providerchecks.v1.RunChecksRequest\x1a$.providerchecks.v1.RunChecksResponse\x12h\n" +
+	"\x0fRunStorageRates\x12).providerchecks.v1.RunStorageRatesRequest\x1a*.providerchecks.v1.RunStorageRatesResponseBCZAmytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1b\x06proto3"
 
 var (
 	file_providerchecks_v1_provider_checks_proto_rawDescOnce sync.Once
@@ -796,35 +1161,44 @@ func file_providerchecks_v1_provider_checks_proto_rawDescGZIP() []byte {
 }
 
 var file_providerchecks_v1_provider_checks_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_providerchecks_v1_provider_checks_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_providerchecks_v1_provider_checks_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_providerchecks_v1_provider_checks_proto_goTypes = []any{
-	(ReasonCode)(0),             // 0: providerchecks.v1.ReasonCode
-	(ErrorCode)(0),              // 1: providerchecks.v1.ErrorCode
-	(*RunChecksRequest)(nil),    // 2: providerchecks.v1.RunChecksRequest
-	(*ProviderBatch)(nil),       // 3: providerchecks.v1.ProviderBatch
-	(*Endpoint)(nil),            // 4: providerchecks.v1.Endpoint
-	(*ContractRef)(nil),         // 5: providerchecks.v1.ContractRef
-	(*CheckTimeouts)(nil),       // 6: providerchecks.v1.CheckTimeouts
-	(*RunChecksResponse)(nil),   // 7: providerchecks.v1.RunChecksResponse
-	(*ContractCheckResult)(nil), // 8: providerchecks.v1.ContractCheckResult
-	(*ErrorDetail)(nil),         // 9: providerchecks.v1.ErrorDetail
+	(ReasonCode)(0),                 // 0: providerchecks.v1.ReasonCode
+	(ErrorCode)(0),                  // 1: providerchecks.v1.ErrorCode
+	(*RunChecksRequest)(nil),        // 2: providerchecks.v1.RunChecksRequest
+	(*ProviderBatch)(nil),           // 3: providerchecks.v1.ProviderBatch
+	(*Endpoint)(nil),                // 4: providerchecks.v1.Endpoint
+	(*ContractRef)(nil),             // 5: providerchecks.v1.ContractRef
+	(*CheckTimeouts)(nil),           // 6: providerchecks.v1.CheckTimeouts
+	(*StorageRatesTimeouts)(nil),    // 7: providerchecks.v1.StorageRatesTimeouts
+	(*RunStorageRatesRequest)(nil),  // 8: providerchecks.v1.RunStorageRatesRequest
+	(*StorageRatesResult)(nil),      // 9: providerchecks.v1.StorageRatesResult
+	(*RunStorageRatesResponse)(nil), // 10: providerchecks.v1.RunStorageRatesResponse
+	(*RunChecksResponse)(nil),       // 11: providerchecks.v1.RunChecksResponse
+	(*ContractCheckResult)(nil),     // 12: providerchecks.v1.ContractCheckResult
+	(*ErrorDetail)(nil),             // 13: providerchecks.v1.ErrorDetail
 }
 var file_providerchecks_v1_provider_checks_proto_depIdxs = []int32{
-	3, // 0: providerchecks.v1.RunChecksRequest.providers:type_name -> providerchecks.v1.ProviderBatch
-	6, // 1: providerchecks.v1.RunChecksRequest.timeouts:type_name -> providerchecks.v1.CheckTimeouts
-	4, // 2: providerchecks.v1.ProviderBatch.storage_endpoint:type_name -> providerchecks.v1.Endpoint
-	5, // 3: providerchecks.v1.ProviderBatch.contracts:type_name -> providerchecks.v1.ContractRef
-	8, // 4: providerchecks.v1.RunChecksResponse.results:type_name -> providerchecks.v1.ContractCheckResult
-	9, // 5: providerchecks.v1.RunChecksResponse.warnings:type_name -> providerchecks.v1.ErrorDetail
-	0, // 6: providerchecks.v1.ContractCheckResult.reason_code:type_name -> providerchecks.v1.ReasonCode
-	1, // 7: providerchecks.v1.ErrorDetail.code:type_name -> providerchecks.v1.ErrorCode
-	2, // 8: providerchecks.v1.ProviderChecksService.RunChecks:input_type -> providerchecks.v1.RunChecksRequest
-	7, // 9: providerchecks.v1.ProviderChecksService.RunChecks:output_type -> providerchecks.v1.RunChecksResponse
-	9, // [9:10] is the sub-list for method output_type
-	8, // [8:9] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	3,  // 0: providerchecks.v1.RunChecksRequest.providers:type_name -> providerchecks.v1.ProviderBatch
+	6,  // 1: providerchecks.v1.RunChecksRequest.timeouts:type_name -> providerchecks.v1.CheckTimeouts
+	4,  // 2: providerchecks.v1.ProviderBatch.storage_endpoint:type_name -> providerchecks.v1.Endpoint
+	5,  // 3: providerchecks.v1.ProviderBatch.contracts:type_name -> providerchecks.v1.ContractRef
+	7,  // 4: providerchecks.v1.RunStorageRatesRequest.timeouts:type_name -> providerchecks.v1.StorageRatesTimeouts
+	9,  // 5: providerchecks.v1.RunStorageRatesResponse.results:type_name -> providerchecks.v1.StorageRatesResult
+	13, // 6: providerchecks.v1.RunStorageRatesResponse.warnings:type_name -> providerchecks.v1.ErrorDetail
+	12, // 7: providerchecks.v1.RunChecksResponse.results:type_name -> providerchecks.v1.ContractCheckResult
+	13, // 8: providerchecks.v1.RunChecksResponse.warnings:type_name -> providerchecks.v1.ErrorDetail
+	0,  // 9: providerchecks.v1.ContractCheckResult.reason_code:type_name -> providerchecks.v1.ReasonCode
+	1,  // 10: providerchecks.v1.ErrorDetail.code:type_name -> providerchecks.v1.ErrorCode
+	2,  // 11: providerchecks.v1.ProviderChecksService.RunChecks:input_type -> providerchecks.v1.RunChecksRequest
+	8,  // 12: providerchecks.v1.ProviderChecksService.RunStorageRates:input_type -> providerchecks.v1.RunStorageRatesRequest
+	11, // 13: providerchecks.v1.ProviderChecksService.RunChecks:output_type -> providerchecks.v1.RunChecksResponse
+	10, // 14: providerchecks.v1.ProviderChecksService.RunStorageRates:output_type -> providerchecks.v1.RunStorageRatesResponse
+	13, // [13:15] is the sub-list for method output_type
+	11, // [11:13] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_providerchecks_v1_provider_checks_proto_init() }
@@ -838,7 +1212,7 @@ func file_providerchecks_v1_provider_checks_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_providerchecks_v1_provider_checks_proto_rawDesc), len(file_providerchecks_v1_provider_checks_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   8,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

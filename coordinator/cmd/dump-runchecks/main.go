@@ -41,6 +41,13 @@ func run() error {
 		pingMS        uint
 		rldpMS        uint
 		totalMS       uint
+
+		alsoDumpStorageRates bool
+		storageRatesOut      string
+		ratesJobID           string
+		ratesQueryTimeoutMS  uint
+		ratesTotalMS         uint
+		ratesQuerySize       uint64
 	)
 
 	flag.StringVar(&outPath, "out", "", "output file path (default: stdout)")
@@ -52,11 +59,20 @@ func run() error {
 	flag.UintVar(&pingMS, "ping-ms", 7000, "ping timeout in milliseconds")
 	flag.UintVar(&rldpMS, "rldp-ms", 10000, "rldp timeout in milliseconds")
 	flag.UintVar(&totalMS, "total-ms", 30000, "total timeout in milliseconds")
+	flag.BoolVar(&alsoDumpStorageRates, "also-dump-storage-rates", false, "also write RunStorageRates grpcurl JSON next to --out (requires non-empty --out)")
+	flag.StringVar(&storageRatesOut, "storage-rates-out", "", "path for RunStorageRates JSON (default: sibling of --out with -storage-rates before extension)")
+	flag.StringVar(&ratesJobID, "rates-job-id", "", "jobId for RunStorageRates dump (default: <run-checks jobId>-storage-rates)")
+	flag.UintVar(&ratesQueryTimeoutMS, "rates-query-timeout-ms", 14000, "RunStorageRates per-query timeout ms for dumped JSON")
+	flag.UintVar(&ratesTotalMS, "rates-total-ms", 120000, "RunStorageRates total_ms for dumped JSON")
+	flag.Uint64Var(&ratesQuerySize, "rates-query-size", 1, "RunStorageRates query_size for dumped JSON (0 still written as 1 in payload if you pass 0)")
 	flag.Parse()
 
 	storage = strings.ToLower(strings.TrimSpace(storage))
 	if storage != "memory" && storage != "postgres" {
 		return fmt.Errorf(`--storage must be "memory" or "postgres", got %q`, storage)
+	}
+	if alsoDumpStorageRates && strings.TrimSpace(outPath) == "" {
+		return fmt.Errorf("--also-dump-storage-rates requires a non-empty --out path (cannot derive sibling next to stdout)")
 	}
 
 	cfg := loadConfig(storage == "postgres")
@@ -94,6 +110,17 @@ func run() error {
 		return fmt.Errorf("create provider client: %w", err)
 	}
 
+	var ratesDump *storageRatesDumpConfig
+	if alsoDumpStorageRates {
+		ratesDump = &storageRatesDumpConfig{
+			ExplicitOutPath: strings.TrimSpace(storageRatesOut),
+			JobIDOverride:   strings.TrimSpace(ratesJobID),
+			QueryTimeoutMs:  uint32(ratesQueryTimeoutMS),
+			TotalMs:         uint32(ratesTotalMS),
+			QuerySize:       ratesQuerySize,
+		}
+	}
+
 	switch storage {
 	case "memory":
 		var lastErr error
@@ -125,7 +152,7 @@ func run() error {
 			builder := providersmaster.NewRequestBuilder(
 				memP, memS, ton, providerClient, dhtClient, ipinfo, logger,
 			)
-			lastErr = writeRunChecksDump(ctx, builder, ipinfo, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS)
+			lastErr = writeRunChecksDump(ctx, builder, ipinfo, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS, ratesDump)
 			if lastErr == nil {
 				return nil
 			}
@@ -164,7 +191,7 @@ func run() error {
 		builder := providersmaster.NewRequestBuilder(
 			provRepo, sysRepo, ton, providerClient, dhtClient, ipinfo, logger,
 		)
-		return writeRunChecksDump(ctx, builder, ipinfo, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS)
+		return writeRunChecksDump(ctx, builder, ipinfo, logger, outPath, jobID, providerLimit, envelope, storage, pingMS, rldpMS, totalMS, ratesDump)
 	}
 
 	return fmt.Errorf("unknown storage %q", storage)
@@ -192,8 +219,8 @@ type runChecksMetaFile struct {
 }
 
 const (
-	geoLookupTimeout = 10 * time.Second
-	geoLookupDelay   = 1 * time.Second
+	geoLookupTimeout      = 10 * time.Second
+	geoLookupDelay        = 1 * time.Second
 	memoryDumpMaxAttempts = 3
 	memoryDumpRetryDelay  = 3 * time.Second
 )
@@ -287,6 +314,7 @@ func writeRunChecksDump(
 	envelope bool,
 	storage string,
 	pingMS, rldpMS, totalMS uint,
+	ratesDump *storageRatesDumpConfig,
 ) error {
 	if builder == nil {
 		return fmt.Errorf("request builder is nil")
@@ -337,6 +365,12 @@ func writeRunChecksDump(
 		metaPath := metaPathForDump(outPath)
 		if err := writeProviderGeoMeta(ctx, ipinfo, req, metaPath, logger); err != nil {
 			logger.Warn("geo meta skipped", "error", err)
+		}
+	}
+
+	if ratesDump != nil && outPath != "" {
+		if err := writeRunStorageRatesDump(req, outPath, ratesDump, logger); err != nil {
+			return err
 		}
 	}
 	return nil

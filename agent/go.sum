@@ -99,6 +99,8 @@ github.com/xssnick/tonutils-go v1.16.0 h1:MLYVZiiMB0Q+XudLo7WyjOli4gMuenNmJpBqET
 github.com/xssnick/tonutils-go v1.16.0/go.mod h1:CNSM+L0FYufOFhprg8otc9Y/ecFfLrWqFMq00Gh9yk4=
 github.com/xssnick/tonutils-storage v1.4.1 h1:M1Efmv9JQoRiY3KQhlMjhlfof0y8rXSGPYeQf41SMtU=
 github.com/xssnick/tonutils-storage v1.4.1/go.mod h1:AiFhv8bSB27YwiS13FnXrXxKLaP6C0AdJKEiNRGJZj4=
+github.com/xssnick/tonutils-storage-provider v0.4.0 h1:0s22IF9tRuBcB1wdIKXrMlYjSbjh4Nl+ZmZs8uOqU/I=
+github.com/xssnick/tonutils-storage-provider v0.4.0/go.mod h1:X07ttBePHBTAPyGAbgJiIrMhdzU23uRoO+tdNyp6tZ4=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=

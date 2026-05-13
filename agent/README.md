@@ -56,6 +56,13 @@ AGENT_AUTH_TOKEN=replace_with_long_random_token
 AGENT_TLS_CERT_FILE=/run/secrets/server.crt
 AGENT_TLS_KEY_FILE=/run/secrets/server.key
 AGENT_MAX_CONCURRENT_PROVIDERS=30
+# RunStorageRates / DHT + provider transport (do not share UDP port with coordinator on same host)
+AGENT_TON_CONFIG_URL=https://ton-blockchain.github.io/global.config.json
+AGENT_ADNL_PORT=16167
+# Optional: 64 hex chars = 32-byte Ed25519 seed; if unset, a random key is generated at startup
+# AGENT_ADNL_KEY=
+# Optional: parallel GetStorageRates cap; if unset, uses AGENT_MAX_CONCURRENT_PROVIDERS
+# AGENT_MAX_CONCURRENT_RATES=
 ```
 
 Mount `server.crt` and `server.key` read-only into the container.

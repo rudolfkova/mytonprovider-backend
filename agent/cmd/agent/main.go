@@ -30,11 +30,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	server, err := grpcserver.New(cfg, logger)
+	server, cleanup, err := grpcserver.New(cfg, logger)
 	if err != nil {
 		logger.Error("failed to initialize gRPC server", "error", err)
 		os.Exit(1)
 	}
+	defer cleanup()
 
 	serveErr := make(chan error, 1)
 	go func() {

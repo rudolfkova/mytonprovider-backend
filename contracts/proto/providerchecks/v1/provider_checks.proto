@@ -8,6 +8,9 @@ option go_package = "mytonprovider-contracts/gen/go/providerchecks/v1;providerch
 // from a single agent location. Coordinator performs 1-of-3 aggregation.
 service ProviderChecksService {
   rpc RunChecks(RunChecksRequest) returns (RunChecksResponse);
+  // RunStorageRates queries storage rates (GetStorageRates) per provider pubkey from this agent.
+  // Coordinator owns batching, schedule, and 1-of-3 aggregation. Agents enforce a max batch size.
+  rpc RunStorageRates(RunStorageRatesRequest) returns (RunStorageRatesResponse);
 }
 
 message RunChecksRequest {
@@ -38,6 +41,46 @@ message CheckTimeouts {
   uint32 ping_ms = 1;
   uint32 rldp_ms = 2;
   uint32 total_ms = 3;
+}
+
+message StorageRatesTimeouts {
+  // Per-provider GetStorageRates deadline; 0 = agent default (see implementation).
+  uint32 query_timeout_ms = 1;
+  // Optional wall-clock cap for the entire RPC (same idea as CheckTimeouts.total_ms).
+  uint32 total_ms = 2;
+}
+
+// RunStorageRatesRequest must stay within the agent max pubkey limit (see agent validation).
+message RunStorageRatesRequest {
+  string job_id = 1;
+  // Hex-encoded 32-byte provider ADNL public keys (64 hex chars), same as coordinator DB public_key.
+  repeated string provider_pubkeys = 2;
+  // Size passed to GetStorageRates (coordinator uses 1). 0 means 1.
+  uint64 query_size = 3;
+  StorageRatesTimeouts timeouts = 4;
+}
+
+message StorageRatesResult {
+  string provider_pubkey = 1;
+  bool ok = 2;
+  bool available = 3;
+  bytes rate_per_mb_day = 4;
+  bytes min_bounty = 5;
+  uint64 space_available_mb = 6;
+  uint32 min_span = 7;
+  uint32 max_span = 8;
+  uint32 latency_ms = 9;
+  string details = 10;
+}
+
+message RunStorageRatesResponse {
+  string job_id = 1;
+  string agent_id = 2;
+  string location = 3;
+  int64 started_at_unix = 4;
+  int64 finished_at_unix = 5;
+  repeated StorageRatesResult results = 6;
+  repeated ErrorDetail warnings = 7;
 }
 
 enum ReasonCode {

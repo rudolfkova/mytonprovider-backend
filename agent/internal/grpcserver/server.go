@@ -13,29 +13,46 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
-	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
 	"mytonprovider-agent/internal/checker"
 	"mytonprovider-agent/internal/config"
+	"mytonprovider-agent/internal/tontransport"
+	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
 )
 
 type service struct {
 	providerchecksv1.UnimplementedProviderChecksServiceServer
 
-	checker  *checker.Checker
-	agentID  string
-	location string
-	logger   *slog.Logger
+	checker            *checker.Checker
+	ratesTransport     *tontransport.ProviderTransport
+	maxConcurrentRates int
+	agentID            string
+	location           string
+	logger             *slog.Logger
 }
 
-func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, error) {
+func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
 	creds, err := credentials.NewServerTLSFromFile(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
-		return nil, fmt.Errorf("create TLS credentials: %w", err)
+		return nil, nil, fmt.Errorf("create TLS credentials: %w", err)
 	}
 
 	checks, err := checker.New(cfg.MaxConcurrentProviders, logger)
 	if err != nil {
-		return nil, fmt.Errorf("initialize checker: %w", err)
+		return nil, nil, fmt.Errorf("initialize checker: %w", err)
+	}
+
+	ratesTransport := tontransport.NewProviderTransport(cfg.TonConfigURL, cfg.AdnlPort, cfg.AdnlPrivateKey)
+	startCtx, cancelStart := context.WithTimeout(context.Background(), 2*time.Minute)
+	if err := ratesTransport.Start(startCtx); err != nil {
+		cancelStart()
+		_ = ratesTransport.Close()
+		return nil, nil, fmt.Errorf("start ton transport: %w", err)
+	}
+	cancelStart()
+
+	maxCR := cfg.MaxConcurrentRates
+	if maxCR <= 0 {
+		maxCR = cfg.MaxConcurrentProviders
 	}
 
 	grpcServer := grpc.NewServer(
@@ -44,13 +61,21 @@ func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, error) {
 	)
 
 	providerchecksv1.RegisterProviderChecksServiceServer(grpcServer, &service{
-		checker:  checks,
-		agentID:  cfg.AgentID,
-		location: cfg.Location,
-		logger:   logger,
+		checker:            checks,
+		ratesTransport:     ratesTransport,
+		maxConcurrentRates: maxCR,
+		agentID:            cfg.AgentID,
+		location:           cfg.Location,
+		logger:             logger,
 	})
 
-	return grpcServer, nil
+	cleanup := func() {
+		if err := ratesTransport.Close(); err != nil {
+			logger.Warn("ton transport close", "error", err)
+		}
+	}
+
+	return grpcServer, cleanup, nil
 }
 
 func (s *service) RunChecks(ctx context.Context, req *providerchecksv1.RunChecksRequest) (*providerchecksv1.RunChecksResponse, error) {

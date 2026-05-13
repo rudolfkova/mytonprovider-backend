@@ -57,6 +57,38 @@ go run ./coordinator/cmd/dump-runchecks --storage=postgres --limit 1 --out agent
 
 (set `DB_*` the same as coordinator).
 
+## RunStorageRates (provider GetStorageRates)
+
+The agent binds a UDP **ADNL** listener for DHT + provider transport (default port `16167`, override with `AGENT_ADNL_PORT`; test task uses `36167` to avoid clashes with a local coordinator).
+
+### Dump + live test (same coordinator path as RunChecks)
+
+Coordinator business code is unchanged; `dump-runchecks` can emit a second JSON next to the RunChecks file:
+
+1. `task coordinator:dump:runchecks:with-storage-rates` — writes `agent/tests/grpc/runchecks-live.json` and **`agent/tests/grpc/runchecks-live-storage-rates.json`** (pubkeys taken from the built RunChecks payload, same order).
+2. With the test agent running (`task agent:run:test`), run **`task agent:test:live:storage-rates`** — dumps (if needed) then `grpcurl` to `RunStorageRates`; last response is saved under `agent/tests/grpc/reports/runchecks-storage-rates-last.json`.
+3. **`task agent:test:live:storage-rates:replay`** — only replays the existing `runchecks-live-storage-rates.json` (no new dump).
+
+Manual equivalent of step 1:
+
+```bash
+go run ./coordinator/cmd/dump-runchecks --limit 50 --out agent/tests/grpc/runchecks-live.json --also-dump-storage-rates
+```
+
+Optional flags: `--storage-rates-out`, `--rates-job-id`, `--rates-query-timeout-ms`, `--rates-total-ms`, `--rates-query-size` (see `go run ./coordinator/cmd/dump-runchecks -help`).
+
+Example `grpcurl` (replace `PROVIDER_PUBKEY_HEX64` with a real 64-char hex pubkey):
+
+```bash
+grpcurl -insecure \
+  -import-path contracts/proto \
+  -proto providerchecks/v1/provider_checks.proto \
+  -H "authorization: Bearer test-token" \
+  -d '{"jobId":"rates-smoke-1","providerPubkeys":["PROVIDER_PUBKEY_HEX64"],"querySize":1,"timeouts":{"queryTimeoutMs":14000,"totalMs":60000}}' \
+  127.0.0.1:8443 \
+  providerchecks.v1.ProviderChecksService/RunStorageRates
+```
+
 ## Prerequisites
 
 - `grpcurl` installed and available in `PATH`

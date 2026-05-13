@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProviderChecksService_RunChecks_FullMethodName = "/providerchecks.v1.ProviderChecksService/RunChecks"
+	ProviderChecksService_RunChecks_FullMethodName       = "/providerchecks.v1.ProviderChecksService/RunChecks"
+	ProviderChecksService_RunStorageRates_FullMethodName = "/providerchecks.v1.ProviderChecksService/RunStorageRates"
 )
 
 // ProviderChecksServiceClient is the client API for ProviderChecksService service.
@@ -30,6 +31,9 @@ const (
 // from a single agent location. Coordinator performs 1-of-3 aggregation.
 type ProviderChecksServiceClient interface {
 	RunChecks(ctx context.Context, in *RunChecksRequest, opts ...grpc.CallOption) (*RunChecksResponse, error)
+	// RunStorageRates queries storage rates (GetStorageRates) per provider pubkey from this agent.
+	// Coordinator owns batching, schedule, and 1-of-3 aggregation. Agents enforce a max batch size.
+	RunStorageRates(ctx context.Context, in *RunStorageRatesRequest, opts ...grpc.CallOption) (*RunStorageRatesResponse, error)
 }
 
 type providerChecksServiceClient struct {
@@ -50,6 +54,16 @@ func (c *providerChecksServiceClient) RunChecks(ctx context.Context, in *RunChec
 	return out, nil
 }
 
+func (c *providerChecksServiceClient) RunStorageRates(ctx context.Context, in *RunStorageRatesRequest, opts ...grpc.CallOption) (*RunStorageRatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RunStorageRatesResponse)
+	err := c.cc.Invoke(ctx, ProviderChecksService_RunStorageRates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProviderChecksServiceServer is the server API for ProviderChecksService service.
 // All implementations must embed UnimplementedProviderChecksServiceServer
 // for forward compatibility.
@@ -58,6 +72,9 @@ func (c *providerChecksServiceClient) RunChecks(ctx context.Context, in *RunChec
 // from a single agent location. Coordinator performs 1-of-3 aggregation.
 type ProviderChecksServiceServer interface {
 	RunChecks(context.Context, *RunChecksRequest) (*RunChecksResponse, error)
+	// RunStorageRates queries storage rates (GetStorageRates) per provider pubkey from this agent.
+	// Coordinator owns batching, schedule, and 1-of-3 aggregation. Agents enforce a max batch size.
+	RunStorageRates(context.Context, *RunStorageRatesRequest) (*RunStorageRatesResponse, error)
 	mustEmbedUnimplementedProviderChecksServiceServer()
 }
 
@@ -70,6 +87,9 @@ type UnimplementedProviderChecksServiceServer struct{}
 
 func (UnimplementedProviderChecksServiceServer) RunChecks(context.Context, *RunChecksRequest) (*RunChecksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RunChecks not implemented")
+}
+func (UnimplementedProviderChecksServiceServer) RunStorageRates(context.Context, *RunStorageRatesRequest) (*RunStorageRatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RunStorageRates not implemented")
 }
 func (UnimplementedProviderChecksServiceServer) mustEmbedUnimplementedProviderChecksServiceServer() {}
 func (UnimplementedProviderChecksServiceServer) testEmbeddedByValue()                               {}
@@ -110,6 +130,24 @@ func _ProviderChecksService_RunChecks_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProviderChecksService_RunStorageRates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunStorageRatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProviderChecksServiceServer).RunStorageRates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProviderChecksService_RunStorageRates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProviderChecksServiceServer).RunStorageRates(ctx, req.(*RunStorageRatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProviderChecksService_ServiceDesc is the grpc.ServiceDesc for ProviderChecksService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -120,6 +158,10 @@ var ProviderChecksService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RunChecks",
 			Handler:    _ProviderChecksService_RunChecks_Handler,
+		},
+		{
+			MethodName: "RunStorageRates",
+			Handler:    _ProviderChecksService_RunStorageRates_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
