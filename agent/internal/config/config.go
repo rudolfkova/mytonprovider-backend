@@ -34,6 +34,8 @@ type Config struct {
 	AdnlPrivateKey ed25519.PrivateKey
 	// MaxConcurrentRates limits parallel GetStorageRates calls; 0 means use MaxConcurrentProviders.
 	MaxConcurrentRates int
+	// MetricsListenAddr is the TCP address for Prometheus /metrics (HTTP). Empty disables metrics.
+	MetricsListenAddr string
 }
 
 func Load() (Config, error) {
@@ -47,6 +49,7 @@ func Load() (Config, error) {
 		MaxConcurrentProviders: defaultMaxConcurrentProviders,
 		TonConfigURL:           envOrDefault("AGENT_TON_CONFIG_URL", defaultTonConfigURL),
 		AdnlPort:               envOrDefault("AGENT_ADNL_PORT", defaultAdnlPort),
+		MetricsListenAddr:      strings.TrimSpace(os.Getenv("AGENT_METRICS_LISTEN_ADDR")),
 	}
 
 	if s := os.Getenv("AGENT_MAX_CONCURRENT_PROVIDERS"); s != "" {

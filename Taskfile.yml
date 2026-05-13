@@ -67,6 +67,7 @@ tasks:
         AGENT_TLS_KEY_FILE=agent/tests/certs/server.key \
         AGENT_MAX_CONCURRENT_PROVIDERS=40 \
         AGENT_ADNL_PORT=36167 \
+        AGENT_METRICS_LISTEN_ADDR=0.0.0.0:9090 \
         go run ./agent/cmd/agent
 
   agent:test:smoke:

@@ -16,3 +16,7 @@
 *.key
 *.csr
 certs/
+
+# Local observability stack: optional bind-mount data / secrets (compose uses named volumes by default)
+/observability/prometheus-grafana/data/
+/observability/prometheus-grafana/.env

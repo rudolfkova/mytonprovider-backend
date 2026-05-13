@@ -18,6 +18,7 @@ import (
 
 	"mytonprovider-agent/internal/checker"
 	"mytonprovider-agent/internal/config"
+	"mytonprovider-agent/internal/metrics"
 	"mytonprovider-agent/internal/tontransport"
 	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
 )
@@ -76,7 +77,10 @@ func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
 			Time:    grpcKeepaliveServerPingInterval,
 			Timeout: grpcKeepaliveServerPingTimeout,
 		}),
-		grpc.UnaryInterceptor(authInterceptor(cfg.AuthToken)),
+		grpc.ChainUnaryInterceptor(
+			metrics.UnaryServerInterceptor(),
+			authInterceptor(cfg.AuthToken),
+		),
 	)
 
 	healthSrv := health.NewServer()
@@ -149,6 +153,7 @@ func (s *service) RunChecks(ctx context.Context, req *providerchecksv1.RunChecks
 			continue
 		}
 		reason := r.GetReasonCode().String()
+		metrics.IncRunChecksResult(reason)
 		reasonCounts[reason]++
 		if r.GetReasonCode() != providerchecksv1.ReasonCode_VALID_STORAGE_PROOF {
 			d := r.GetDetails()
@@ -158,6 +163,7 @@ func (s *service) RunChecks(ctx context.Context, req *providerchecksv1.RunChecks
 			errorSignatures[fmt.Sprintf("%s | %s", reason, d)]++
 		}
 	}
+	metrics.ObserveRunChecksJob(time.Since(started), len(resp.Results))
 
 	log.Info(
 		"RunChecks completed",

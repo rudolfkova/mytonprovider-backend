@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"mytonprovider-agent/internal/metrics"
 	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
 )
 
@@ -120,8 +121,10 @@ func (s *service) RunStorageRates(ctx context.Context, req *providerchecksv1.Run
 	ok, fail := 0, 0
 	for _, r := range results {
 		if r != nil && r.GetOk() {
+			metrics.IncRunStorageRatesRow(true)
 			ok++
 		} else {
+			metrics.IncRunStorageRatesRow(false)
 			fail++
 		}
 	}
@@ -132,6 +135,7 @@ func (s *service) RunStorageRates(ctx context.Context, req *providerchecksv1.Run
 		"failed", fail,
 		"duration_ms", time.Since(started).Milliseconds(),
 	)
+	metrics.ObserveRunStorageRatesJob(time.Since(started))
 	return resp, nil
 }
 

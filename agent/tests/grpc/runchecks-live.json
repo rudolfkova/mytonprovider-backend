@@ -23010,6 +23010,6 @@
   "timeouts": {
     "pingMs": 7000,
     "rldpMs": 10000,
-    "totalMs": 30000
+    "totalMs": 0
   }
 }

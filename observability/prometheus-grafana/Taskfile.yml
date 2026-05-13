@@ -1,0 +1,55 @@
+version: "3"
+
+# Local Prometheus + Grafana stack. Run from this directory, or from repo root:
+#   task -t observability/prometheus-grafana/Taskfile.yml up
+
+tasks:
+  default:
+    desc: List observability stack tasks
+    cmds:
+      - task --list
+
+  up:
+    desc: Start Prometheus (9091) and Grafana (3000) in the background
+    cmds:
+      - docker compose up -d
+
+  down:
+    desc: Stop stack (keeps Docker volumes with TSDB / Grafana data)
+    cmds:
+      - docker compose down
+
+  down:clean:
+    desc: Stop stack and remove named volumes (full reset of Prometheus / Grafana data)
+    cmds:
+      - docker compose down -v
+
+  ps:
+    desc: Show container status
+    cmds:
+      - docker compose ps
+
+  logs:
+    desc: Follow compose logs (Ctrl+C to exit)
+    cmds:
+      - docker compose logs -f
+
+  logs:prometheus:
+    desc: Follow Prometheus logs only
+    cmds:
+      - docker compose logs -f prometheus
+
+  logs:grafana:
+    desc: Follow Grafana logs only
+    cmds:
+      - docker compose logs -f grafana
+
+  pull:
+    desc: Pull pinned images from docker-compose.yml
+    cmds:
+      - docker compose pull
+
+  reload:prometheus:
+    desc: Reload prometheus.yml without restart (requires compose up with --web.enable-lifecycle)
+    cmds:
+      - curl -fsS -X POST http://127.0.0.1:9091/-/reload
