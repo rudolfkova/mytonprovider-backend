@@ -80,6 +80,8 @@ Example with [grpc_health_probe](https://github.com/grpc-ecosystem/grpc-health-p
 grpc_health_probe -addr=127.0.0.1:8443 -tls -tls-no-verify
 ```
 
+The gRPC server also enables **HTTP/2 keepalive** (server pings idle clients about once per minute; clients may ping at most about every 10s when `PermitWithoutStream` applies) so long-lived connections are less likely to be dropped by NAT/firewalls.
+
 ## 5) Coordinator trust
 
 Coordinator gRPC client must trust the CA cert (`ca.crt`) that signed agent server certs.

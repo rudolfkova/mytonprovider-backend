@@ -13,12 +13,21 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 
 	"mytonprovider-agent/internal/checker"
 	"mytonprovider-agent/internal/config"
 	"mytonprovider-agent/internal/tontransport"
 	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+)
+
+// gRPC HTTP/2 keepalive defaults (server → client pings + policy for client pings).
+// Coordinator can add client-side keepalive later; PermitWithoutStream allows pings with no active RPC.
+const (
+	grpcKeepaliveServerPingInterval = 1 * time.Minute
+	grpcKeepaliveServerPingTimeout  = 20 * time.Second
+	grpcKeepaliveMinClientPing      = 10 * time.Second
 )
 
 type service struct {
@@ -59,6 +68,14 @@ func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
 
 	grpcServer := grpc.NewServer(
 		grpc.Creds(creds),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             grpcKeepaliveMinClientPing,
+			PermitWithoutStream: true,
+		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    grpcKeepaliveServerPingInterval,
+			Timeout: grpcKeepaliveServerPingTimeout,
+		}),
 		grpc.UnaryInterceptor(authInterceptor(cfg.AuthToken)),
 	)
 
