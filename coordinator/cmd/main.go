@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"mytonprovider-coordinator/internal/cache"
+	"mytonprovider-coordinator/internal/clients/agentrpc"
 	"mytonprovider-coordinator/internal/clients/ifconfig"
 	tonclient "mytonprovider-coordinator/internal/clients/ton"
 	"mytonprovider-coordinator/internal/httpServer"
@@ -125,6 +126,24 @@ func run() (err error) {
 		return
 	}
 
+	agentEndpoints := agentrpc.ParseEndpointsCSV(config.Agents.Endpoints)
+	agentRPC, err := agentrpc.New(agentrpc.Config{
+		Endpoints:      agentEndpoints,
+		AuthToken:      config.Agents.AuthToken,
+		CACertFile:     config.Agents.CACertFile,
+		RequestTimeout: time.Duration(config.Agents.RequestTimeoutMs) * time.Millisecond,
+	}, logger)
+	if err != nil {
+		logger.Error("failed to initialize agent RPC client", slog.String("error", err.Error()))
+	}
+	if agentRPC != nil {
+		defer func() {
+			if cErr := agentRPC.Close(); cErr != nil {
+				logger.Warn("failed to close agent RPC clients", slog.String("error", cErr.Error()))
+			}
+		}()
+	}
+
 	// Postgres
 	connPool, err := connectPostgres(context.Background(), config, logger)
 	if err != nil {
@@ -150,8 +169,15 @@ func run() (err error) {
 		providerClient,
 		dhtClient,
 		ipinfo,
+		agentRPC,
 		config.TON.MasterAddress,
 		config.TON.BatchSize,
+		providersmaster.RunChecksTimeouts{
+			PingMs:              config.Agents.RunChecksPingMs,
+			RldpMs:              config.Agents.RunChecksRldpMs,
+			TotalMs:             config.Agents.RunChecksTotalMs,
+			StorageRatesQueryMs: config.Agents.StorageRatesQueryMs,
+		},
 		logger,
 	)
 	providersMasterWorker = providersmaster.NewMetrics(workersRunCount, workersRunDuration, providersMasterWorker)

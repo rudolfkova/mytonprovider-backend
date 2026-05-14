@@ -28,6 +28,8 @@ import (
 	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
 	"github.com/xssnick/tonutils-storage/storage"
 
+	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+	"mytonprovider-coordinator/internal/clients/agentrpc"
 	"mytonprovider-coordinator/internal/clients/ifconfig"
 	tonclient "mytonprovider-coordinator/internal/clients/ton"
 	"mytonprovider-coordinator/internal/constants"
@@ -88,6 +90,19 @@ type ipclient interface {
 	GetIPInfo(ctx context.Context, ip string) (conf *ifconfig.Info, err error)
 }
 
+type agentclient interface {
+	RunChecksAll(ctx context.Context, req *providerchecksv1.RunChecksRequest) ([]agentrpc.RunChecksResult, []agentrpc.AgentCallError)
+	RunStorageRatesAll(ctx context.Context, req *providerchecksv1.RunStorageRatesRequest) ([]agentrpc.RunStorageRatesResult, []agentrpc.AgentCallError)
+	AgentCount() int
+}
+
+type RunChecksTimeouts struct {
+	PingMs              uint32
+	RldpMs              uint32
+	TotalMs             uint32
+	StorageRatesQueryMs uint32
+}
+
 type providersMasterWorker struct {
 	providers      providers
 	system         system
@@ -95,9 +110,11 @@ type providersMasterWorker struct {
 	ipinfo         ipclient
 	prv            ed25519.PrivateKey
 	providerClient *transport.Client
+	agentClient    agentclient
 	dhtClient      *dht.Client
 	masterAddr     string
 	batchSize      uint32
+	timeouts       RunChecksTimeouts
 	logger         *slog.Logger
 }
 
@@ -242,24 +259,36 @@ func (w *providersMasterWorker) UpdateKnownProviders(ctx context.Context) (inter
 		return
 	}
 
+	if w.agentClient == nil || w.agentClient.AgentCount() == 0 {
+		log.Error("no configured agent clients for UpdateKnownProviders")
+		interval = failureInterval
+		return
+	}
+
+	req := &providerchecksv1.RunStorageRatesRequest{
+		JobId:           fmt.Sprintf("update-known-providers-%d", time.Now().Unix()),
+		ProviderPubkeys: p,
+		QuerySize:       fakeSize,
+		Timeouts: &providerchecksv1.StorageRatesTimeouts{
+			QueryTimeoutMs: w.timeouts.StorageRatesQueryMs,
+		},
+	}
+	responses, callErrs := w.agentClient.RunStorageRatesAll(ctx, req)
+	for _, callErr := range callErrs {
+		log.Warn("RunStorageRates failed for agent", "endpoint", callErr.Endpoint, "error", callErr.Err)
+	}
+	if len(responses) == 0 {
+		log.Error("all agents are unavailable for RunStorageRates", "agents_total", w.agentClient.AgentCount())
+		interval = failureInterval
+		return
+	}
+
+	merged := mergeStorageRatesResponses(p, responses)
 	providersInfo := make([]db.ProviderUpdate, 0, len(p))
 	providersStatuses := make([]db.ProviderStatusUpdate, 0, len(p))
 	for _, pubkey := range p {
-		select {
-		case <-ctx.Done():
-			log.Info("context done, stopping provider check")
-			return
-		default:
-		}
-		d, err := hex.DecodeString(pubkey)
-		if err != nil || len(d) != 32 {
-			continue
-		}
-
-		timeoutCtx, cancel := context.WithTimeout(ctx, providerResponseTimeout)
-		rates, err := w.providerClient.GetStorageRates(timeoutCtx, d, fakeSize)
-		cancel()
-		if err != nil {
+		rates, ok := merged[pubkey]
+		if !ok || rates == nil || !rates.GetOk() {
 			providersStatuses = append(providersStatuses, db.ProviderStatusUpdate{
 				Pubkey:   pubkey,
 				IsOnline: false,
@@ -274,7 +303,7 @@ func (w *providersMasterWorker) UpdateKnownProviders(ctx context.Context) (inter
 
 		providersInfo = append(providersInfo, db.ProviderUpdate{
 			Pubkey:       pubkey,
-			RatePerMBDay: new(big.Int).SetBytes(rates.RatePerMBDay).Int64(),
+			RatePerMBDay: new(big.Int).SetBytes(rates.RatePerMbDay).Int64(),
 			MinBounty:    new(big.Int).SetBytes(rates.MinBounty).Int64(),
 			MinSpan:      rates.MinSpan,
 			MaxSpan:      rates.MaxSpan,
@@ -576,62 +605,24 @@ func (w *providersMasterWorker) UpdateIPInfo(ctx context.Context) (interval time
 // updateActiveContracts check storage proofs for all bags and update status for relations provider-contract
 func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (err error) {
 	log := w.logger.With(slog.String("worker", "StoreProof"), slog.String("function", "updateActiveContracts"))
-
-	providersContracts := make(map[string][]db.ContractToProviderRelation)
-	for _, sc := range storageContracts {
-		providersContracts[sc.ProviderPublicKey] = append(providersContracts[sc.ProviderPublicKey], sc)
+	if w.agentClient == nil || w.agentClient.AgentCount() == 0 {
+		return fmt.Errorf("no configured agent clients for RunChecks")
 	}
 
-	wg := sync.WaitGroup{}
-	semaphore := make(chan struct{}, maxConcurrentBagChecks)
-	var bagsStatuses sync.Map
-
-	for pubkey, contracts := range providersContracts {
-		wg.Add(1)
-
-		go func(pubkey string, contracts []db.ContractToProviderRelation) {
-			defer wg.Done()
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			gw := adnl.NewGateway(w.prv)
-			defer gw.Close()
-
-			if sErr := gw.StartClient(); sErr != nil {
-				log.Error("failed to start ADNL gateway", "error", sErr)
-				return
-			}
-
-			ip, ok := availableProvidersIPs[pubkey]
-			if !ok {
-				fillStatuses(&bagsStatuses, contracts, constants.IPNotFound)
-				return
-			}
-
-			checkProviderFiles(ctx, gw, ip, contracts, &bagsStatuses, log)
-		}(pubkey, contracts)
+	req, providerCount := w.buildRunChecksRPCRequest(storageContracts, availableProvidersIPs)
+	if providerCount == 0 {
+		return fmt.Errorf("no providers with resolved endpoints for RunChecks")
 	}
 
-	wg.Wait()
+	responses, callErrs := w.agentClient.RunChecksAll(ctx, req)
+	for _, callErr := range callErrs {
+		log.Warn("RunChecks failed for agent", "endpoint", callErr.Endpoint, "error", callErr.Err)
+	}
+	if len(responses) == 0 {
+		return fmt.Errorf("all agents are unavailable for RunChecks")
+	}
 
-	valid := 0
-	contractProofsChecks := make([]db.ContractProofsCheck, 0, len(storageContracts))
-	bagsStatuses.Range(func(_, value any) (resp bool) {
-		resp = true
-
-		proof, ok := value.(db.ContractProofsCheck)
-		if !ok {
-			return
-		}
-
-		contractProofsChecks = append(contractProofsChecks, proof)
-
-		if proof.Reason == constants.ValidStorageProof {
-			valid++
-		}
-
-		return
-	})
+	contractProofsChecks, valid := mergeRunChecksResponses(storageContracts, responses)
 
 	err = w.providers.UpdateContractProofsChecks(ctx, contractProofsChecks)
 	if err != nil {
@@ -639,9 +630,162 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 		return
 	}
 
-	log.Info("successfully updated contract proofs checks", "count", len(contractProofsChecks), "valid", valid)
+	log.Info(
+		"successfully updated contract proofs checks",
+		"count", len(contractProofsChecks),
+		"valid", valid,
+		"agents_total", w.agentClient.AgentCount(),
+		"agents_successful", len(responses),
+	)
 
 	return nil
+}
+
+func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (*providerchecksv1.RunChecksRequest, int) {
+	providersContracts := make(map[string][]db.ContractToProviderRelation)
+	for _, sc := range storageContracts {
+		providersContracts[sc.ProviderPublicKey] = append(providersContracts[sc.ProviderPublicKey], sc)
+	}
+
+	providers := make([]*providerchecksv1.ProviderBatch, 0, len(providersContracts))
+	for pubkey, contracts := range providersContracts {
+		ip, ok := availableProvidersIPs[pubkey]
+		if !ok || strings.TrimSpace(ip.Storage.IP) == "" || ip.Storage.Port <= 0 || len(ip.Storage.PublicKey) != ed25519.PublicKeySize {
+			continue
+		}
+		contractRefs := make([]*providerchecksv1.ContractRef, 0, len(contracts))
+		for _, c := range contracts {
+			contractRefs = append(contractRefs, &providerchecksv1.ContractRef{
+				ContractAddress: c.Address,
+				BagId:           c.BagID,
+			})
+		}
+		providers = append(providers, &providerchecksv1.ProviderBatch{
+			ProviderPubkey:  pubkey,
+			ProviderAddress: contracts[0].ProviderAddress,
+			StorageEndpoint: &providerchecksv1.Endpoint{
+				Ip:         ip.Storage.IP,
+				Port:       ip.Storage.Port,
+				AdnlPubkey: append([]byte(nil), ip.Storage.PublicKey...),
+			},
+			Contracts: contractRefs,
+		})
+	}
+
+	return &providerchecksv1.RunChecksRequest{
+		JobId:     fmt.Sprintf("storeproof-%d", time.Now().Unix()),
+		Providers: providers,
+		Timeouts: &providerchecksv1.CheckTimeouts{
+			PingMs:  w.timeouts.PingMs,
+			RldpMs:  w.timeouts.RldpMs,
+			TotalMs: w.timeouts.TotalMs,
+		},
+	}, len(providers)
+}
+
+func mergeRunChecksResponses(storageContracts []db.ContractToProviderRelation, responses []agentrpc.RunChecksResult) ([]db.ContractProofsCheck, int) {
+	type selectedResult struct {
+		reason   constants.ReasonCode
+		hasValue bool
+		valid    bool
+	}
+
+	byKey := make(map[string]selectedResult, len(storageContracts))
+	for _, agentResp := range responses {
+		if agentResp.Response == nil {
+			continue
+		}
+		for _, row := range agentResp.Response.GetResults() {
+			if row == nil {
+				continue
+			}
+			key := row.GetProviderAddress() + "|" + row.GetContractAddress()
+			reasonCode := reasonFromProto(row.GetReasonCode())
+
+			current := byKey[key]
+			if !current.hasValue {
+				byKey[key] = selectedResult{
+					reason:   reasonCode,
+					hasValue: true,
+					valid:    reasonCode == constants.ValidStorageProof,
+				}
+				continue
+			}
+			if current.valid {
+				continue
+			}
+			if reasonCode == constants.ValidStorageProof {
+				byKey[key] = selectedResult{
+					reason:   reasonCode,
+					hasValue: true,
+					valid:    true,
+				}
+			}
+		}
+	}
+
+	valid := 0
+	contractProofsChecks := make([]db.ContractProofsCheck, 0, len(storageContracts))
+	for _, sc := range storageContracts {
+		key := sc.ProviderAddress + "|" + sc.Address
+		chosen, ok := byKey[key]
+		reasonCode := constants.NotFound
+		if ok && chosen.hasValue {
+			reasonCode = chosen.reason
+		}
+		if reasonCode == constants.ValidStorageProof {
+			valid++
+		}
+		contractProofsChecks = append(contractProofsChecks, db.ContractProofsCheck{
+			ContractAddress: sc.Address,
+			ProviderAddress: sc.ProviderAddress,
+			Reason:          reasonCode,
+		})
+	}
+
+	return contractProofsChecks, valid
+}
+
+func mergeStorageRatesResponses(pubkeys []string, responses []agentrpc.RunStorageRatesResult) map[string]*providerchecksv1.StorageRatesResult {
+	type selectedRates struct {
+		row   *providerchecksv1.StorageRatesResult
+		valid bool
+	}
+	byPubkey := make(map[string]selectedRates, len(pubkeys))
+	for _, resp := range responses {
+		if resp.Response == nil {
+			continue
+		}
+		for _, row := range resp.Response.GetResults() {
+			if row == nil {
+				continue
+			}
+			key := strings.TrimSpace(row.GetProviderPubkey())
+			if key == "" {
+				continue
+			}
+
+			current, ok := byPubkey[key]
+			if !ok {
+				byPubkey[key] = selectedRates{row: row, valid: row.GetOk()}
+				continue
+			}
+			if current.valid {
+				continue
+			}
+			if row.GetOk() {
+				byPubkey[key] = selectedRates{row: row, valid: true}
+			}
+		}
+	}
+
+	out := make(map[string]*providerchecksv1.StorageRatesResult, len(pubkeys))
+	for _, pk := range pubkeys {
+		if selected, ok := byPubkey[pk]; ok {
+			out[pk] = selected.row
+		}
+	}
+	return out
 }
 
 func checkProviderFiles(ctx context.Context, gw *adnl.Gateway, ip db.ProviderIP, storageContracts []db.ContractToProviderRelation, bagsStatuses *sync.Map, log *slog.Logger) {
@@ -1269,8 +1413,10 @@ func NewWorker(
 	providerClient *transport.Client,
 	dhtClient *dht.Client,
 	ipinfo ipclient,
+	agentClient agentclient,
 	masterAddr string,
 	batchSize uint32,
+	timeouts RunChecksTimeouts,
 	logger *slog.Logger,
 ) Worker {
 	_, prv, err := ed25519.GenerateKey(nil)
@@ -1285,10 +1431,12 @@ func NewWorker(
 		ton:            ton,
 		prv:            prv,
 		providerClient: providerClient,
+		agentClient:    agentClient,
 		dhtClient:      dhtClient,
 		ipinfo:         ipinfo,
 		masterAddr:     masterAddr,
 		batchSize:      batchSize,
+		timeouts:       timeouts,
 		logger:         logger,
 	}
 }

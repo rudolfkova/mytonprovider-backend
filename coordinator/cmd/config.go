@@ -37,6 +37,17 @@ type TON struct {
 	BatchSize     uint32 `env:"BATCH_SIZE" required:"true" envDefault:"100"`
 }
 
+type Agents struct {
+	Endpoints           string `env:"AGENT_ENDPOINTS" envDefault:""`
+	AuthToken           string `env:"AGENT_AUTH_TOKEN" envDefault:""`
+	CACertFile          string `env:"AGENT_CA_CERT_FILE" envDefault:""`
+	RequestTimeoutMs    uint32 `env:"AGENT_RPC_TIMEOUT_MS" envDefault:"30000"`
+	RunChecksPingMs     uint32 `env:"COORDINATOR_RUNCHECKS_PING_MS" envDefault:"7000"`
+	RunChecksRldpMs     uint32 `env:"COORDINATOR_RUNCHECKS_RLDP_MS" envDefault:"2000"`
+	RunChecksTotalMs    uint32 `env:"COORDINATOR_RUNCHECKS_TOTAL_MS" envDefault:"1200000"`
+	StorageRatesQueryMs uint32 `env:"COORDINATOR_STORAGERATES_QUERY_TIMEOUT_MS" envDefault:"14000"`
+}
+
 type Postgress struct {
 	Host     string `env:"DB_HOST" required:"true"`
 	Port     string `env:"DB_PORT" required:"true"`
@@ -49,6 +60,7 @@ type Config struct {
 	System  System
 	Metrics Metrics
 	TON     TON
+	Agents  Agents
 	DB      Postgress
 }
 
@@ -65,6 +77,9 @@ func loadConfig() *Config {
 	}
 	if err := env.Parse(&cfg.TON); err != nil {
 		log.Fatalf("Failed to parse TON config: %v", err)
+	}
+	if err := env.Parse(&cfg.Agents); err != nil {
+		log.Fatalf("Failed to parse agents config: %v", err)
 	}
 
 	if cfg.System.Key == nil {

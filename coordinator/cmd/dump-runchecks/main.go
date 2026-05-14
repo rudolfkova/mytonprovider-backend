@@ -134,8 +134,15 @@ func run() error {
 				providerClient,
 				dhtClient,
 				ipinfo,
+				nil,
 				cfg.TON.MasterAddress,
 				cfg.TON.BatchSize,
+				providersmaster.RunChecksTimeouts{
+					PingMs:              uint32(pingMS),
+					RldpMs:              uint32(rldpMS),
+					TotalMs:             uint32(totalMS),
+					StorageRatesQueryMs: uint32(ratesQueryTimeoutMS),
+				},
 				logger,
 			)
 			if worker == nil {
