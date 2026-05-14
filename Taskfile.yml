@@ -297,6 +297,7 @@ tasks:
         else
           echo ""
           echo "(Install jq to print contract pass/fail summary.)"
+        fi
 
   agent:deploy:init:
     desc: Prepare agent deploy env and secrets placeholders
@@ -338,6 +339,72 @@ tasks:
     cmds:
       - docker compose --env-file agent/deploy/.env -f agent/deploy/docker-compose.yml logs -f
 
+  agent:hub:init:
+    desc: Prepare agent Docker Hub deploy env and secrets placeholders
+    cmds:
+      - mkdir -p agent/deploy/secrets
+      - |
+        if [ ! -f agent/deploy/.env.hub ]; then
+          cp agent/deploy/.env.hub.example agent/deploy/.env.hub
+          echo "Created agent/deploy/.env.hub from .env.hub.example"
+        else
+          echo "agent/deploy/.env.hub already exists"
+        fi
+      - |
+        if [ ! -f agent/deploy/secrets/server.crt ]; then
+          echo "Place TLS cert into agent/deploy/secrets/server.crt"
+        fi
+      - |
+        if [ ! -f agent/deploy/secrets/server.key ]; then
+          echo "Place TLS key into agent/deploy/secrets/server.key"
+        fi
+
+  agent:hub:up:
+    desc: Pull and start agent from Docker Hub image (no local build)
+    cmds:
+      - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.yml up -d
+
+  agent:hub:down:
+    desc: Stop Docker Hub agent stack
+    cmds:
+      - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.yml down
+
+  agent:hub:ps:
+    desc: Show Docker Hub agent stack containers
+    cmds:
+      - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.yml ps
+
+  agent:hub:logs:
+    desc: Follow logs for Docker Hub agent stack
+    cmds:
+      - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.yml logs -f
+
+  agent:image:build:
+    desc: Build agent image locally (set AGENT_IMAGE)
+    cmds:
+      - |
+        if [ -z "${AGENT_IMAGE:-}" ]; then
+          echo "AGENT_IMAGE is required, e.g. AGENT_IMAGE=user/mytonprovider-agent:latest task agent:image:build"
+          exit 1
+        fi
+      - docker build -f agent/Dockerfile -t "${AGENT_IMAGE}" .
+
+  agent:image:push:
+    desc: Push prebuilt agent image (set AGENT_IMAGE)
+    cmds:
+      - |
+        if [ -z "${AGENT_IMAGE:-}" ]; then
+          echo "AGENT_IMAGE is required, e.g. AGENT_IMAGE=user/mytonprovider-agent:latest task agent:image:push"
+          exit 1
+        fi
+      - docker push "${AGENT_IMAGE}"
+
+  agent:image:build:push:
+    desc: Build and push agent image (set AGENT_IMAGE)
+    deps:
+      - agent:image:build
+      - agent:image:push
+
   coordinator:deploy:init:
     desc: Prepare coordinator deploy env and secrets placeholders
     cmds:
@@ -378,4 +445,3 @@ tasks:
     desc: Follow logs for coordinator deploy stack
     cmds:
       - docker compose --env-file coordinator/deploy/.env -f coordinator/deploy/docker-compose.yml logs -f
-        fi

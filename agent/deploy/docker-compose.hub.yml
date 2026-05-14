@@ -1,0 +1,12 @@
+services:
+  agent:
+    image: ${AGENT_IMAGE}
+    pull_policy: always
+    restart: unless-stopped
+    env_file:
+      - .env.hub
+    ports:
+      - "${AGENT_GRPC_PORT:-8443}:8443/tcp"
+      - "${AGENT_ADNL_PORT:-16167}:16167/udp"
+    volumes:
+      - ./secrets:/run/secrets:ro

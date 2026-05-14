@@ -6,6 +6,8 @@ This stack runs:
 - `grafana`
 - `loki`
 
+For low-disk VPS, prefer Docker Hub mode (no local image build): `docker-compose.hub.yml`.
+
 ## 1) Prepare
 
 From repository root:
@@ -49,3 +51,27 @@ task agent:deploy:up
 task agent:deploy:logs
 task agent:deploy:down
 ```
+
+## Docker Hub mode (no build on VPS)
+
+This mode runs only `agent` container from a prebuilt image.
+
+### A) Build and push image from local machine
+
+```bash
+docker login
+AGENT_IMAGE=<docker-user>/mytonprovider-agent:latest task agent:image:build:push
+```
+
+### B) Start on VPS
+
+```bash
+task agent:hub:init
+nano agent/deploy/.env.hub
+task agent:hub:up
+```
+
+In `.env.hub` set:
+- `AGENT_IMAGE=<docker-user>/mytonprovider-agent:latest`
+- `AGENT_AUTH_TOKEN=...`
+- keep TLS paths `/run/secrets/server.crt` and `/run/secrets/server.key`
