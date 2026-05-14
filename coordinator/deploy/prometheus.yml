@@ -1,0 +1,13 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: mytonprovider-coordinator
+    metrics_path: /metrics
+    scheme: http
+    bearer_token_file: /etc/prometheus/secrets/metrics.token
+    static_configs:
+      - targets: ["coordinator:9090"]
+        labels:
+          service: coordinator

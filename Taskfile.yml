@@ -297,4 +297,85 @@ tasks:
         else
           echo ""
           echo "(Install jq to print contract pass/fail summary.)"
+
+  agent:deploy:init:
+    desc: Prepare agent deploy env and secrets placeholders
+    cmds:
+      - mkdir -p agent/deploy/secrets
+      - |
+        if [ ! -f agent/deploy/.env ]; then
+          cp agent/deploy/.env.example agent/deploy/.env
+          echo "Created agent/deploy/.env from .env.example"
+        else
+          echo "agent/deploy/.env already exists"
+        fi
+      - |
+        if [ ! -f agent/deploy/secrets/server.crt ]; then
+          echo "Place TLS cert into agent/deploy/secrets/server.crt"
+        fi
+      - |
+        if [ ! -f agent/deploy/secrets/server.key ]; then
+          echo "Place TLS key into agent/deploy/secrets/server.key"
+        fi
+
+  agent:deploy:up:
+    desc: Build and start agent deploy stack
+    cmds:
+      - docker compose --env-file agent/deploy/.env -f agent/deploy/docker-compose.yml up -d --build
+
+  agent:deploy:down:
+    desc: Stop agent deploy stack
+    cmds:
+      - docker compose --env-file agent/deploy/.env -f agent/deploy/docker-compose.yml down
+
+  agent:deploy:ps:
+    desc: Show agent deploy stack containers
+    cmds:
+      - docker compose --env-file agent/deploy/.env -f agent/deploy/docker-compose.yml ps
+
+  agent:deploy:logs:
+    desc: Follow logs for agent deploy stack
+    cmds:
+      - docker compose --env-file agent/deploy/.env -f agent/deploy/docker-compose.yml logs -f
+
+  coordinator:deploy:init:
+    desc: Prepare coordinator deploy env and secrets placeholders
+    cmds:
+      - mkdir -p coordinator/deploy/secrets
+      - |
+        if [ ! -f coordinator/deploy/.env ]; then
+          cp coordinator/deploy/.env.example coordinator/deploy/.env
+          echo "Created coordinator/deploy/.env from .env.example"
+        else
+          echo "coordinator/deploy/.env already exists"
+        fi
+      - |
+        if [ ! -f coordinator/deploy/secrets/agents-ca.crt ]; then
+          echo "Place CA cert into coordinator/deploy/secrets/agents-ca.crt"
+        fi
+      - |
+        if [ ! -f coordinator/deploy/secrets/metrics.token ]; then
+          printf '%s\n' "metrics-token" > coordinator/deploy/secrets/metrics.token
+          echo "Created placeholder coordinator/deploy/secrets/metrics.token"
+        fi
+
+  coordinator:deploy:up:
+    desc: Build and start coordinator deploy stack
+    cmds:
+      - docker compose --env-file coordinator/deploy/.env -f coordinator/deploy/docker-compose.yml up -d --build
+
+  coordinator:deploy:down:
+    desc: Stop coordinator deploy stack
+    cmds:
+      - docker compose --env-file coordinator/deploy/.env -f coordinator/deploy/docker-compose.yml down
+
+  coordinator:deploy:ps:
+    desc: Show coordinator deploy stack containers
+    cmds:
+      - docker compose --env-file coordinator/deploy/.env -f coordinator/deploy/docker-compose.yml ps
+
+  coordinator:deploy:logs:
+    desc: Follow logs for coordinator deploy stack
+    cmds:
+      - docker compose --env-file coordinator/deploy/.env -f coordinator/deploy/docker-compose.yml logs -f
         fi

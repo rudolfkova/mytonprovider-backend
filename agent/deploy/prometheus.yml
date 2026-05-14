@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: mytonprovider-agent
+    static_configs:
+      - targets: ["agent:9090"]
+        labels:
+          service: agent

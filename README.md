@@ -72,6 +72,27 @@ Create `.vscode/launch.json`:
 }
 ```
 
+## Docker test deploy (VPS)
+
+For test runs with a simple operator flow (`clone -> task -> edit .env -> up`):
+
+- Agent stack docs: `agent/deploy/README.md`
+- Coordinator stack docs: `coordinator/deploy/README.md`
+
+Quick start:
+
+```bash
+task agent:deploy:init
+nano agent/deploy/.env
+task agent:deploy:up
+```
+
+```bash
+task coordinator:deploy:init
+nano coordinator/deploy/.env
+task coordinator:deploy:up
+```
+
 ## Project Structure
 
 ```

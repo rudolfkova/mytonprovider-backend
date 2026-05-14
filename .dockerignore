@@ -1,0 +1,21 @@
+.git
+.github
+.idea
+.vscode
+**/.DS_Store
+**/*.log
+
+# Test artifacts / local reports
+agent/tests/
+coordinator/tmp/
+observability/prometheus-grafana/data/
+
+# Local env / secrets
+**/.env
+**/.env.*
+**/secrets/
+
+# Binaries
+**/bin/
+**/dist/
+**/build/
