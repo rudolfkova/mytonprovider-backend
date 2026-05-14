@@ -63,6 +63,8 @@ AGENT_ADNL_PORT=16167
 # AGENT_ADNL_KEY=
 # Optional: parallel GetStorageRates cap; if unset, uses AGENT_MAX_CONCURRENT_PROVIDERS
 # AGENT_MAX_CONCURRENT_RATES=
+# Optional: after each RunChecks, push summary rows to Loki (Grafana tables). No trailing slash. Example: http://127.0.0.1:3100
+# AGENT_LOKI_URL=http://127.0.0.1:3100
 # Optional: Prometheus /metrics (HTTP). Empty = disabled. Use 0.0.0.0:9090 so Prometheus-in-Docker can scrape via host.docker.internal (127.0.0.1 is host-only).
 # AGENT_METRICS_LISTEN_ADDR=0.0.0.0:9090
 ```

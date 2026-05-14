@@ -10,7 +10,7 @@ tasks:
       - task --list
 
   up:
-    desc: Start Prometheus (9091) and Grafana (3000) in the background
+    desc: Start Prometheus (9091), Grafana (3000), Loki (3100) in the background
     cmds:
       - docker compose up -d
 
@@ -20,7 +20,7 @@ tasks:
       - docker compose down
 
   down:clean:
-    desc: Stop stack and remove named volumes (full reset of Prometheus / Grafana data)
+    desc: Stop stack and remove named volumes (Prometheus, Grafana, Loki)
     cmds:
       - docker compose down -v
 
@@ -43,6 +43,11 @@ tasks:
     desc: Follow Grafana logs only
     cmds:
       - docker compose logs -f grafana
+
+  logs:loki:
+    desc: Follow Loki logs only
+    cmds:
+      - docker compose logs -f loki
 
   pull:
     desc: Pull pinned images from docker-compose.yml

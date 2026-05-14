@@ -1,0 +1,95 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"cellHeight": "sm", "footer": {"show": false}, "showHeader": true, "sortBy": []},
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "{job=\"runchecks\", event=\"job\"}",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 500,
+          "legendFormat": ""
+        }
+      ],
+      "title": "RunChecks — джобы (JSON в строке лога)",
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {"delimiter": ",", "format": "json", "source": "Line"}
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "loki", "uid": "loki"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 14, "w": 24, "x": 0, "y": 12},
+      "id": 2,
+      "options": {"cellHeight": "sm", "footer": {"show": false}, "showHeader": true, "sortBy": []},
+      "targets": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "editorMode": "code",
+          "expr": "{job=\"runchecks\", event=\"ip\", job_id=~\"$job_id\"}",
+          "queryType": "range",
+          "refId": "A",
+          "maxLines": 2000,
+          "legendFormat": ""
+        }
+      ],
+      "title": "RunChecks — по storage IP (фильтр job_id; All = все)",
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {"delimiter": ",", "format": "json", "source": "Line"}
+        }
+      ],
+      "type": "table"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["mytonprovider", "runchecks", "loki"],
+  "templating": {
+    "list": [
+      {
+        "current": {"selected": true, "text": "All", "value": "$__all"},
+        "datasource": {"type": "loki", "uid": "loki"},
+        "definition": "label_values({job=\"runchecks\", event=\"job\"}, job_id)",
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "job_id",
+        "multi": false,
+        "name": "job_id",
+        "options": [],
+        "query": "label_values({job=\"runchecks\", event=\"job\"}, job_id)",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 3,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {"from": "now-7d", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "RunChecks jobs (Loki)",
+  "uid": "myton-runchecks-jobs-loki",
+  "version": 1,
+  "weekStart": ""
+}

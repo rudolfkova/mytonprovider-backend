@@ -3,9 +3,18 @@
 #
 # Usage: from this directory: docker compose up -d
 #   Prometheus UI: http://127.0.0.1:9091
-#   Grafana:       http://127.0.0.1:3000  (admin / see GF_SECURITY_ADMIN_PASSWORD below)
+#   Grafana:         http://127.0.0.1:3000  (admin / see GF_SECURITY_ADMIN_PASSWORD below)
+#   Loki API:        http://127.0.0.1:3100  (agent pushes RunChecks summaries when AGENT_LOKI_URL is set)
 
 services:
+  loki:
+    image: grafana/loki:2.9.4
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - loki_data:/loki
+
   prometheus:
     image: prom/prometheus:v2.55.1
     extra_hosts:
@@ -34,7 +43,9 @@ services:
       - ./grafana/dashboards:/etc/grafana/dashboards:ro
     depends_on:
       - prometheus
+      - loki
 
 volumes:
   prometheus_tsdb:
   grafana_data:
+  loki_data:

@@ -68,6 +68,7 @@ tasks:
         AGENT_MAX_CONCURRENT_PROVIDERS=40 \
         AGENT_ADNL_PORT=36167 \
         AGENT_METRICS_LISTEN_ADDR=0.0.0.0:9090 \
+        AGENT_LOKI_URL=http://127.0.0.1:3100 \
         go run ./agent/cmd/agent
 
   agent:test:smoke:

@@ -1,56 +1,54 @@
-# Prometheus + Grafana (локальный стек)
+# Prometheus + Grafana + Loki (локальный стек)
 
-Скрейпит **`/metrics`** агента на хост-машине.
+## Метрики агента (Prometheus)
 
-## Важно про порт метрик агента
-
-Контейнер Prometheus ходит на хост через **`host.docker.internal`**. На Linux сервис, слушающий только **`127.0.0.1:9090`**, часто **недоступен** из Docker.
-
-Запускай агента с:
+Контейнер Prometheus ходит на хост через **`host.docker.internal`**. Агент должен слушать метрики на **`0.0.0.0:9090`**, иначе target будет DOWN.
 
 ```bash
 export AGENT_METRICS_LISTEN_ADDR=0.0.0.0:9090
-# плюс остальные AGENT_* как обычно
 ```
 
-Локально безопаснее ограничить фаерволом доступ к `9090` снаружи, если машина в открытой сети.
-
-## Запуск
+## Запуск compose
 
 Из этой директории:
 
 ```bash
 task up
-# эквивалент: docker compose up -d
-# из корня репозитория: task -t observability/prometheus-grafana/Taskfile.yml up
+# из корня: task -t observability/prometheus-grafana/Taskfile.yml up
 ```
 
-- **Prometheus:** http://127.0.0.1:9091 — раздел **Status → Targets**, цель `mytonprovider-agent` должна быть **UP**.
-- **Grafana:** http://127.0.0.1:3000 — логин **`admin`**, пароль **`admin`** (смени после первого входа).
+- **Prometheus:** http://127.0.0.1:9091  
+- **Grafana:** http://127.0.0.1:3000 — `admin` / `admin`  
+- **Loki:** http://127.0.0.1:3100 — приём **push** от агента (`POST /loki/api/v1/push`)
 
-Источник данных **Prometheus** подключается автоматически (`grafana/provisioning`).
+Datasources **Prometheus** и **Loki** подключаются из `grafana/provisioning`.
 
-### Дашборд «из коробки»
+## RunChecks: таблицы в Grafana (без плагинов)
 
-После входа в Grafana: **Dashboards → папка Agent → Mytonprovider agent** — там графики по gRPC (RPS, коды, p95), RunChecks и RunStorageRates.
+После каждого **RunChecks** агент может отправлять в Loki компактные JSON-строки (одна на джобу + по одной на каждый **storage IP**).
 
-Если стэк уже был запущен до появления дашборда, перезапусти Grafana: `docker compose restart grafana` или `task down` → `task up`.
+1. Подними compose (`task up`).
+2. Запусти агента с **`AGENT_LOKI_URL=http://127.0.0.1:3100`** (если Loki на том же хосте; без trailing slash). Корневой **`task agent:run:test`** уже задаёт этот URL.
+3. В Grafana: **Dashboards → Agent → RunChecks jobs (Loki)** — таблица джоб и таблица по IP (переменная **job_id**, значение **All** = все джобы).
 
-### Ad-hoc в Explore
+Поля в JSON включают `valid`, `invalid`, `total`, `duration_ms`, `finished_unix` и счётчики **`n_<REASON_CODE>`** (числа, нули для отсутствующих кодов).
 
-**Explore** → datasource **Prometheus** — можно писать любой PromQL (см. примеры внизу).
+Если **`AGENT_LOKI_URL` пустой**, push не выполняется.
+
+## Дашборды
+
+- **Mytonprovider agent** — метрики Prometheus (gRPC, RunChecks counters и т.д.).
+- **RunChecks jobs (Loki)** — таблицы по push-событиям.
 
 ## Остановка
 
 ```bash
 task down
-# полный сброс данных в volumes: task down:clean
+task down:clean   # удалит volumes Prometheus / Grafana / Loki
 ```
 
-Данные TSDB и Grafana сохраняются в **именованных Docker volumes** (`prometheus_tsdb`, `grafana_data`). Полный сброс: `task down:clean` (или `docker compose down -v`).
+## Примеры в Explore
 
-## Примеры запросов в Grafana → Explore
+**Prometheus:** `agent_grpc_requests_total`, `rate(agent_grpc_requests_total[1m])`
 
-- `agent_grpc_requests_total`
-- `rate(agent_grpc_requests_total[1m])`
-- `histogram_quantile(0.95, sum(rate(agent_grpc_request_duration_seconds_bucket[5m])) by (le, grpc_method))`
+**Loki:** `{job="runchecks", event="job"}`, `{job="runchecks", event="ip"}`

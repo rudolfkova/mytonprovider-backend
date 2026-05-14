@@ -23009,7 +23009,7 @@
   ],
   "timeouts": {
     "pingMs": 7000,
-    "rldpMs": 10000,
+    "rldpMs": 2000,
     "totalMs": 0
   }
 }

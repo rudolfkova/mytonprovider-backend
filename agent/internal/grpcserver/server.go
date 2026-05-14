@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 
 	"mytonprovider-agent/internal/checker"
 	"mytonprovider-agent/internal/config"
+	"mytonprovider-agent/internal/lokipush"
 	"mytonprovider-agent/internal/metrics"
 	"mytonprovider-agent/internal/tontransport"
 	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
@@ -40,6 +42,8 @@ type service struct {
 	agentID            string
 	location           string
 	logger             *slog.Logger
+	lokiURL            string
+	lokiHTTP           *http.Client
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
@@ -94,6 +98,10 @@ func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
 		agentID:            cfg.AgentID,
 		location:           cfg.Location,
 		logger:             logger,
+		lokiURL:            cfg.LokiURL,
+		lokiHTTP: &http.Client{
+			Timeout: 8 * time.Second,
+		},
 	})
 
 	cleanup := func() {
@@ -174,6 +182,27 @@ func (s *service) RunChecks(ctx context.Context, req *providerchecksv1.RunChecks
 		"reason_counts", reasonCounts,
 		"error_signatures", errorSignatures,
 	)
+
+	if s.lokiURL != "" {
+		lokiCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		err := lokipush.PushRunChecks(
+			lokiCtx,
+			s.lokiURL,
+			s.lokiHTTP,
+			req.GetJobId(),
+			s.agentID,
+			s.location,
+			resp.GetFinishedAtUnix(),
+			time.Since(started).Milliseconds(),
+			resp.Results,
+			req.GetProviders(),
+		)
+		cancel()
+		if err != nil {
+			log.Warn("loki push RunChecks summary failed", "error", err)
+		}
+	}
+
 	return resp, nil
 }
 

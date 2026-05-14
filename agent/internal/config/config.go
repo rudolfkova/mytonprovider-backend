@@ -36,6 +36,8 @@ type Config struct {
 	MaxConcurrentRates int
 	// MetricsListenAddr is the TCP address for Prometheus /metrics (HTTP). Empty disables metrics.
 	MetricsListenAddr string
+	// LokiURL is the base URL for Loki HTTP push (e.g. http://127.0.0.1:3100). Empty disables RunChecks push.
+	LokiURL string
 }
 
 func Load() (Config, error) {
@@ -50,6 +52,7 @@ func Load() (Config, error) {
 		TonConfigURL:           envOrDefault("AGENT_TON_CONFIG_URL", defaultTonConfigURL),
 		AdnlPort:               envOrDefault("AGENT_ADNL_PORT", defaultAdnlPort),
 		MetricsListenAddr:      strings.TrimSpace(os.Getenv("AGENT_METRICS_LISTEN_ADDR")),
+		LokiURL:                strings.TrimSpace(strings.TrimRight(os.Getenv("AGENT_LOKI_URL"), "/")),
 	}
 
 	if s := os.Getenv("AGENT_MAX_CONCURRENT_PROVIDERS"); s != "" {
