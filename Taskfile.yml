@@ -379,6 +379,26 @@ tasks:
     cmds:
       - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.yml logs -f
 
+  agent:hub:stack:up:
+    desc: Pull and start agent + monitoring stack from Docker Hub image (no local build)
+    cmds:
+      - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.stack.yml up -d
+
+  agent:hub:stack:down:
+    desc: Stop Docker Hub agent + monitoring stack
+    cmds:
+      - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.stack.yml down
+
+  agent:hub:stack:ps:
+    desc: Show Docker Hub agent + monitoring stack containers
+    cmds:
+      - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.stack.yml ps
+
+  agent:hub:stack:logs:
+    desc: Follow logs for Docker Hub agent + monitoring stack
+    cmds:
+      - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.stack.yml logs -f
+
   agent:image:build:
     desc: Build agent image locally (set AGENT_IMAGE)
     cmds:

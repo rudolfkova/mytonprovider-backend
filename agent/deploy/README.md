@@ -6,7 +6,7 @@ This stack runs:
 - `grafana`
 - `loki`
 
-For low-disk VPS, prefer Docker Hub mode (no local image build): `docker-compose.hub.yml`.
+For low-disk VPS, prefer Docker Hub mode (no local image build): `docker-compose.hub.yml` / `docker-compose.hub.stack.yml`.
 
 ## 1) Prepare
 
@@ -54,7 +54,9 @@ task agent:deploy:down
 
 ## Docker Hub mode (no build on VPS)
 
-This mode runs only `agent` container from a prebuilt image.
+You can run either:
+- `agent` only (`docker-compose.hub.yml`)
+- `agent + prometheus + grafana + loki` (`docker-compose.hub.stack.yml`)
 
 ### A) Build and push image from local machine
 
@@ -75,3 +77,21 @@ In `.env.hub` set:
 - `AGENT_IMAGE=<docker-user>/mytonprovider-agent:latest`
 - `AGENT_AUTH_TOKEN=...`
 - keep TLS paths `/run/secrets/server.crt` and `/run/secrets/server.key`
+- keep `AGENT_METRICS_LISTEN_ADDR=:9090` and `AGENT_LOKI_URL=http://loki:3100` for metrics/logs
+
+### C) Full observability stack on VPS (still no build)
+
+```bash
+task agent:hub:stack:up
+task agent:hub:stack:ps
+```
+
+UIs:
+- Prometheus: `http://<vps-ip>:${PROMETHEUS_PORT}`
+- Grafana: `http://<vps-ip>:${GRAFANA_PORT}`
+
+Stop:
+
+```bash
+task agent:hub:stack:down
+```
