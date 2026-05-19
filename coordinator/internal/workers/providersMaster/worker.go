@@ -18,6 +18,7 @@ import (
 
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/adnl"
+	adnladdress "github.com/xssnick/tonutils-go/adnl/address"
 	"github.com/xssnick/tonutils-go/adnl/dht"
 	"github.com/xssnick/tonutils-go/adnl/keys"
 	"github.com/xssnick/tonutils-go/adnl/overlay"
@@ -26,7 +27,6 @@ import (
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/tvm/cell"
 	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
-	"github.com/xssnick/tonutils-storage/storage"
 
 	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
 	"mytonprovider-coordinator/internal/clients/agentrpc"
@@ -34,6 +34,7 @@ import (
 	tonclient "mytonprovider-coordinator/internal/clients/ton"
 	"mytonprovider-coordinator/internal/constants"
 	"mytonprovider-coordinator/internal/models/db"
+	"mytonprovider-coordinator/internal/tonstorage"
 	"mytonprovider-coordinator/internal/utils"
 )
 
@@ -904,9 +905,9 @@ func checkPiece(ctx context.Context, rl *rldp.RLDP, bagID string, log *slog.Logg
 	}
 
 	// get torrent info
-	var res storage.TorrentInfoContainer
+	var res tonstorage.TorrentInfoContainer
 	rlCtx, rlc := context.WithTimeout(ctx, rlQueryTimeout)
-	err = rl.DoQuery(rlCtx, 32<<20, overlay.WrapQuery(over, &storage.GetTorrentInfo{}), &res)
+	err = rl.DoQuery(rlCtx, 32<<20, overlay.WrapQuery(over, &tonstorage.GetTorrentInfo{}), &res)
 	rlc()
 	if err != nil {
 		log.Debug("failed to get torrent info from provider", "error", err)
@@ -927,8 +928,8 @@ func checkPiece(ctx context.Context, rl *rldp.RLDP, bagID string, log *slog.Logg
 		return
 	}
 
-	var info storage.TorrentInfo
-	err = tlb.LoadFromCell(&info, cl.BeginParse())
+	var info tonstorage.TorrentInfo
+	err = tlb.Parse(&info, cl)
 	if err != nil {
 		log.Debug("failed to load torrent info from cell", "error", err)
 		reason = constants.InvalidHeader
@@ -949,9 +950,9 @@ func checkPiece(ctx context.Context, rl *rldp.RLDP, bagID string, log *slog.Logg
 	}
 
 	// get piece proof and validate
-	var piece storage.Piece
+	var piece tonstorage.Piece
 	rl2Ctx, rl2c := context.WithTimeout(ctx, rlQueryTimeout)
-	err = rl.DoQuery(rl2Ctx, 32<<20, overlay.WrapQuery(over, &storage.GetPiece{PieceID: pieceID}), &piece)
+	err = rl.DoQuery(rl2Ctx, 32<<20, overlay.WrapQuery(over, &tonstorage.GetPiece{PieceID: pieceID}), &piece)
 	rl2c()
 
 	if err != nil {
@@ -1235,10 +1236,14 @@ func (w *providersMasterWorker) findStorageIPOverlay(ctx context.Context, provid
 			}
 
 			for _, addr := range addrList.Addresses {
-				if addr.IP.String() == providerIP {
+				addrIP := adnladdress.IPValue(addr)
+				if addrIP == nil {
+					continue
+				}
+				if addrIP.String() == providerIP {
 					ip.PublicKey = pubKey
-					ip.IP = addr.IP.String()
-					ip.Port = addr.Port
+					ip.IP = addrIP.String()
+					ip.Port = adnladdress.PortValue(addr)
 
 					log.Info("found storage IP via overlay DHT", "provider_pubkey", sc.ProviderPublicKey, "ip", ip.IP, "port", ip.Port)
 					return
@@ -1311,8 +1316,13 @@ func (w *providersMasterWorker) findStorageIP(ctx context.Context, addr *address
 	}
 
 	ip.PublicKey = pub
-	ip.IP = l.Addresses[0].IP.String()
-	ip.Port = l.Addresses[0].Port
+	ipVal := adnladdress.IPValue(l.Addresses[0])
+	if ipVal == nil {
+		err = fmt.Errorf("empty storage address ip")
+		return
+	}
+	ip.IP = ipVal.String()
+	ip.Port = adnladdress.PortValue(l.Addresses[0])
 
 	return
 }
@@ -1361,8 +1371,13 @@ func (w *providersMasterWorker) findProviderIP(ctx context.Context, pk []byte) (
 	}
 
 	ip.PublicKey = pub
-	ip.IP = l.Addresses[0].IP.String()
-	ip.Port = l.Addresses[0].Port
+	ipVal := adnladdress.IPValue(l.Addresses[0])
+	if ipVal == nil {
+		err = fmt.Errorf("empty provider address ip")
+		return
+	}
+	ip.IP = ipVal.String()
+	ip.Port = adnladdress.PortValue(l.Addresses[0])
 
 	return
 }

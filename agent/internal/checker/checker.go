@@ -20,10 +20,10 @@ import (
 	"github.com/xssnick/tonutils-go/tl"
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/tvm/cell"
-	"github.com/xssnick/tonutils-storage/storage"
 
 	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
 	"mytonprovider-agent/internal/reason"
+	"mytonprovider-agent/internal/tonstorage"
 )
 
 const (
@@ -306,10 +306,10 @@ func (c *Checker) checkPiece(
 	}
 
 	// Get torrent info.
-	var res storage.TorrentInfoContainer
+	var res tonstorage.TorrentInfoContainer
 	rldpTimeout := timeoutFromMs(timeouts.GetRldpMs(), defaultRLDPTimeout)
 	infoCtx, cancelInfo := context.WithTimeout(ctx, rldpTimeout)
-	err = rl.DoQuery(infoCtx, 32<<20, overlay.WrapQuery(over, &storage.GetTorrentInfo{}), &res)
+	err = rl.DoQuery(infoCtx, 32<<20, overlay.WrapQuery(over, &tonstorage.GetTorrentInfo{}), &res)
 	cancelInfo()
 	if err != nil {
 		log.Debug("failed to get torrent info from provider", "error", err)
@@ -330,8 +330,8 @@ func (c *Checker) checkPiece(
 		return reason.InvalidHeader, fmt.Sprintf("stage=validate_torrent_info_hash got=%x expected=%x", cl.Hash(), bag)
 	}
 
-	var info storage.TorrentInfo
-	err = tlb.LoadFromCell(&info, cl.BeginParse())
+	var info tonstorage.TorrentInfo
+	err = tlb.Parse(&info, cl)
 	if err != nil {
 		log.Debug("failed to load torrent info from cell", "error", err)
 		return reason.InvalidHeader, fmt.Sprintf("stage=load_torrent_info_cell error=%s", err.Error())
@@ -351,9 +351,9 @@ func (c *Checker) checkPiece(
 	}
 
 	// Get piece proof and validate.
-	var piece storage.Piece
+	var piece tonstorage.Piece
 	pieceCtx, cancelPiece := context.WithTimeout(ctx, rldpTimeout)
-	err = rl.DoQuery(pieceCtx, 32<<20, overlay.WrapQuery(over, &storage.GetPiece{PieceID: pieceID}), &piece)
+	err = rl.DoQuery(pieceCtx, 32<<20, overlay.WrapQuery(over, &tonstorage.GetPiece{PieceID: pieceID}), &piece)
 	cancelPiece()
 	if err != nil {
 		log.Debug("failed to get piece from provider", "error", err)

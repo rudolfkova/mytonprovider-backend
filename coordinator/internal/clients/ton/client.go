@@ -243,12 +243,16 @@ func parseTx(tx *tlb.Transaction) (res *Transaction, ok bool) {
 
 			if msg.Payload() != nil {
 				{
-					b := msg.Payload().BeginParse()
-					comment, _ = b.LoadStringSnake()
+					b, parseErr := msg.Payload().BeginParse()
+					if parseErr == nil {
+						comment, _ = b.LoadStringSnake()
+					}
 				}
 				{
-					b := msg.Payload().BeginParse()
-					op, _ = b.LoadUInt(32)
+					b, parseErr := msg.Payload().BeginParse()
+					if parseErr == nil {
+						op, _ = b.LoadUInt(32)
+					}
 				}
 			}
 		}
