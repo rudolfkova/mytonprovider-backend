@@ -20,3 +20,18 @@ certs/
 # Local observability stack: optional bind-mount data / secrets (compose uses named volumes by default)
 /observability/prometheus-grafana/data/
 /observability/prometheus-grafana/.env
+
+# Legacy / accidental root binaries
+/cmd
+/dump-runchecks
+/providers.json
+/providers-90.txt
+
+# Generated gRPC / Postman test outputs
+agent/tests/grpc/reports/
+agent/tests/postman/reports/
+agent/tests/grpc/runchecks-live.json
+agent/tests/grpc/runchecks-live-*.json
+agent/tests/grpc/runchecks-live-targeted.json
+agent/tests/grpc/runchecks-live-targeted-meta.json
+agent/tests/grpc/runchecks-live-storage-rates.json

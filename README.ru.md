@@ -1,111 +1,126 @@
 # mytonprovider-backend
 
-Backend сервис для mytonprovider.org - сервис мониторинга провайдеров TON Storage.
+Backend для [mytonprovider.org](https://mytonprovider.org) — мониторинг и проверки здоровья провайдеров TON Storage.
 
-## Описание
+## Архитектура
 
-Данный backend сервис:
-- Взаимодействует с провайдерами хранилища через ADNL протокол
-- Мониторит производительность, доступность провайдеров, доступность хранимых файлов, проводит проверки здоровья
-- Обрабатывает телеметрию от провайдеров
-- Предоставляет API эндпоинты для фронтенда
-- Вычисляет рейтинг, аптайм, статус провайдеров
-- Собирает собственные метрики через **Prometheus**
+Два Go-сервиса и общие protobuf-контракты в `contracts/`:
 
-## Установка и настройка
+| Компонент | Назначение |
+|-----------|------------|
+| **coordinator** | HTTP API для фронтенда, Postgres, фоновые воркеры (жизненный цикл провайдеров, телеметрия, очистка), вызов проверок по gRPC к агентам |
+| **agent** | gRPC (`RunChecks`, `RunStorageRates`), ADNL к провайдерам, опционально Prometheus и push в Loki |
 
-Для начала нам потребуется чистый сервер на Debian 12 с рут пользователем.
-
-1. **Склонируйте скрипт для подключения по ключу**
-
-Вместо логина по паролю, скрипт безопасности требует использовать логин по ключу. Этот скрипт нужно запускать на рабочей машине, он не потребует sudo, а только пробросит ключи для доступа.
-
-```bash
-wget https://raw.githubusercontent.com/dearjohndoe/mytonprovider-backend/refs/heads/master/scripts/init_server_connection.sh
+```mermaid
+flowchart LR
+  Frontend --> Coordinator
+  Coordinator -->|gRPC TLS| Agent
+  Agent -->|ADNL| Providers[TON Storage providers]
+  Coordinator --> Postgres
 ```
 
-2. **Пробрасываем ключи и закрываем доступ по паролю**
+## Структура репозитория
 
-```bash
-USERNAME=root PASSWORD=supersecretpassword HOST=123.45.67.89 bash init_server_connection.sh
 ```
-
-В случае ошибки man-in-the-middle, возможно вам стоит удалить known_hosts.
-
-3. **Заходим на удаленную машину и качаем скрипт установки**
-
-```bash
-ssh root@123.45.67.89 # Если требует пароль, то предыдущий шаг завершился с ошибкой.
-
-wget https://raw.githubusercontent.com/dearjohndoe/mytonprovider-backend/refs/heads/master/scripts/setup_server.sh
+├── agent/              # gRPC-агент проверок
+├── coordinator/        # API, воркеры, db/init.sql
+├── contracts/          # proto и сгенерированный Go
+├── observability/      # локальный Prometheus + Grafana + Loki (dev)
+├── Taskfile.yml        # proto, тесты, деплой
+└── go.work
 ```
-
-4. **Запускаем настройку и установку сервера**
-
-Займет несколько минут.
-
-```bash
-PG_USER=pguser PG_PASSWORD=secret PG_DB=providerdb NEWFRONTENDUSER=jdfront NEWSUDOUSER=johndoe NEWUSER_PASSWORD=newsecurepassword bash ./setup_server.sh
-```
-
-По завершении выведет полезную информацию по использованию сервера.
-
 
 ## Разработка
 
-### Конфигурация VS Code
-Создайте `.vscode/launch.json`:
+**Нужно:** Go 1.26+ ([go.work](go.work)), [Task](https://taskfile.dev), `grpcurl`, `openssl`, `protoc` (для `task proto:gen`).
+
+```bash
+# Перегенерация protobuf (после правок contracts/proto)
+task proto:gen
+task proto:check
+
+# Локальный агент с тестовым TLS и токеном
+task agent:run:test
+```
+
+В другом терминале — gRPC smoke (агент уже должен быть запущен):
+
+```bash
+task agent:test:smoke
+```
+
+Живые проверки с реальными данными TON: [agent/tests/grpc/README.md](agent/tests/grpc/README.md).
+
+**TLS для продакшн-агентов:** [agent/README.md](agent/README.md)
+
+### VS Code
+
+Пример `launch.json`:
+
 ```json
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Launch Package",
-            "type": "go",
-            "request": "launch",
-            "mode": "auto",
-            "program": "${workspaceFolder}/cmd",
-            "buildFlags": "-tags=debug",    // для обработки OPTIONS запросов без nginx при разработке
-            "env": {...}
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Coordinator",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/coordinator/cmd",
+      "buildFlags": "-tags=debug"
+    },
+    {
+      "name": "Agent",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/agent/cmd/agent"
+    }
+  ]
 }
 ```
 
-## Структура проекта
+Переменные `env` задайте по `coordinator/deploy/.env.example` или по тестовым значениям из `Taskfile.yml` (`task agent:run:test`).
 
+## Docker-деплой (VPS)
+
+Сценарий: клон → `task` init → правка `.env` → `up`.
+
+| Стек | Документация |
+|------|----------------|
+| Agent (+ опционально мониторинг) | [agent/deploy/README.md](agent/deploy/README.md) |
+| Coordinator (+ Postgres + мониторинг) | [coordinator/deploy/README.md](coordinator/deploy/README.md) |
+
+Быстрый старт:
+
+```bash
+task agent:deploy:init
+nano agent/deploy/.env
+task agent:deploy:up
 ```
-├── cmd/                   # Точка входа приложения, конфиги, инициализация
-├── pkg/                   # Пакеты приложения
-│   ├── cache/             # Кастомный кеш
-│   ├── httpServer/        # Fiber хандлеры сервера
-│   ├── models/            # Модели данных для БД и API
-│   ├── repositories/      # Вся работа с postgres здесь
-│   ├── services/          # Бизнес логика
-│   ├── tonclient/         # TON blockchain клиент, обертка для нескольких полезных функций
-│   └── workers/           # Воркеры
-├── db/                    # Схема базы данных
-├── scripts/               # Скрипты настройки и утилиты
+
+```bash
+task coordinator:deploy:init
+nano coordinator/deploy/.env
+task coordinator:deploy:up
 ```
 
-## API Эндпоинты
+## Локальная observability
 
-Сервер предоставляет REST API эндпоинты для:
-- Сбора телеметрии провайдеров
-- Информации о провайдерах и инструменты фильтрации
-- Метрик
+Отдельный стек Prometheus + Grafana + Loki для разработки: [observability/prometheus-grafana/README.md](observability/prometheus-grafana/README.md).
 
-## Воркеры
+## API и воркеры coordinator
 
-Приложение запускает несколько фоновых воркеров:
-- **Providers Master**: Управляет жизненным циклом провайдеров, проверками здоровья и хранимых файлов
-- **Telemetry Worker**: Обрабатывает входящюю телеметрию
-- **Cleaner Worker**: Чистит базу данных от устаревшей информации
+REST (Fiber): телеметрия, список/фильтры провайдеров, метрики.
+
+Фоновые воркеры:
+
+- **Providers Master** — жизненный цикл провайдеров, health checks, gRPC к агентам
+- **Telemetry Worker** — телеметрия от провайдеров
+- **Cleaner Worker** — очистка устаревших данных в БД
 
 ## Лицензия
 
-Apache-2.0
+Apache-2.0 — см. [LICENSE](LICENSE).
 
-
-
-Этот проект был создан по заказу участника сообщества TON Foundation.
+Проект создан по заказу участника сообщества TON Foundation.

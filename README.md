@@ -2,82 +2,96 @@
 
 **[Русская версия](README.ru.md)**
 
-Backend service for mytonprovider.org - a TON Storage providers monitoring service.
+Backend for [mytonprovider.org](https://mytonprovider.org) — monitoring and health checks for TON Storage providers.
 
-## Description
+## Architecture
 
-This backend service:
-- Communicates with storage providers via ADNL protocol
-- Monitors provider performance, availability, do health checks
-- Handles telemetry data from providers
-- Provides API endpoints for frontend
-- Computes provider ratings
-- Collect own metrics via **Prometheus**
+Two Go services share protobuf contracts in `contracts/`:
 
-## Installation & Setup
+| Component | Role |
+|-----------|------|
+| **coordinator** | HTTP API for the frontend, Postgres, background workers (provider lifecycle, telemetry, cleanup), orchestrates checks via gRPC to agents |
+| **agent** | gRPC service (`RunChecks`, `RunStorageRates`), ADNL transport to providers, optional Prometheus metrics and Loki push |
 
-To get started, you'll need a clean Debian 12 server with root user access.
-
-1. **Download the server connection script**
-
-Instead of password login, the security script requires using key-based authentication. This script should be run on your local machine, it doesn't require sudo, and will only forward keys for access.
-
-```bash
-wget https://raw.githubusercontent.com/dearjohndoe/mytonprovider-backend/refs/heads/master/scripts/init_server_connection.sh
+```mermaid
+flowchart LR
+  Frontend --> Coordinator
+  Coordinator -->|gRPC TLS| Agent
+  Agent -->|ADNL| Providers[TON Storage providers]
+  Coordinator --> Postgres
 ```
 
-2. **Forward keys and disable password access**
+## Repository layout
 
-```bash
-USERNAME=root PASSWORD=supersecretpassword HOST=123.45.67.89 bash init_server_connection.sh
+```
+├── agent/              # gRPC check agent
+├── coordinator/        # API, workers, db/init.sql
+├── contracts/          # proto + generated Go
+├── observability/      # local Prometheus + Grafana + Loki (dev)
+├── Taskfile.yml        # proto, tests, deploy tasks
+└── go.work
 ```
 
-In case of a man-in-the-middle error, you might need to remove known_hosts.
+## Development
 
-3. **Log into the remote machine and download the installation script**
-
-```bash
-ssh root@123.45.67.89 # If it asks for a password, the previous step failed.
-
-wget https://raw.githubusercontent.com/dearjohndoe/mytonprovider-backend/refs/heads/master/scripts/setup_server.sh
-```
-
-4. **Run server setup and installation**
-
-This will take a few minutes.
+**Prerequisites:** Go 1.26+ ([go.work](go.work)), [Task](https://taskfile.dev), `grpcurl`, `openssl`, `protoc` (for `task proto:gen`).
 
 ```bash
-PG_USER=pguser PG_PASSWORD=secret PG_DB=providerdb NEWFRONTENDUSER=jdfront NEWSUDOUSER=johndoe NEWUSER_PASSWORD=newsecurepassword bash ./setup_server.sh
+# Regenerate protobuf (after editing contracts/proto)
+task proto:gen
+task proto:check
+
+# Run agent locally with test TLS + token
+task agent:run:test
 ```
 
-Upon completion, it will output useful information about server usage.
+In another terminal — gRPC smoke tests (agent must already be running):
 
-## Dev:
-### VS Code Configuration
-Create `.vscode/launch.json`:
+```bash
+task agent:test:smoke
+```
+
+Live checks against real TON data: see [agent/tests/grpc/README.md](agent/tests/grpc/README.md).
+
+**TLS for production agents:** [agent/README.md](agent/README.md)
+
+### VS Code
+
+Example `launch.json` entries:
+
 ```json
 {
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Launch Package",
-            "type": "go",
-            "request": "launch",
-            "mode": "auto",
-            "program": "${workspaceFolder}/cmd",
-            "buildFlags": "-tags=debug",    // to handle OPTIONS queries without nginx when dev
-            "env": {...}
-        }
-    ]
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Coordinator",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/coordinator/cmd",
+      "buildFlags": "-tags=debug"
+    },
+    {
+      "name": "Agent",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/agent/cmd/agent"
+    }
+  ]
 }
 ```
 
-## Docker test deploy (VPS)
+Set `env` in each configuration to match `coordinator/deploy/.env.example` or test vars from `Taskfile.yml` (`task agent:run:test`).
 
-For test runs with a simple operator flow (`clone -> task -> edit .env -> up`):
+## Docker deploy (VPS)
 
-- Agent stack docs: `agent/deploy/README.md`
-- Coordinator stack docs: `coordinator/deploy/README.md`
+Operator flow: clone → `task` init → edit `.env` → `up`.
+
+| Stack | Docs |
+|-------|------|
+| Agent (+ optional monitoring) | [agent/deploy/README.md](agent/deploy/README.md) |
+| Coordinator (+ Postgres + monitoring) | [coordinator/deploy/README.md](coordinator/deploy/README.md) |
 
 Quick start:
 
@@ -93,40 +107,22 @@ nano coordinator/deploy/.env
 task coordinator:deploy:up
 ```
 
-## Project Structure
+## Local observability
 
-```
-├── cmd/                   # Application entry point, configs, inits
-├── pkg/                   # Application packages
-│   ├── cache/             # Custom cache
-│   ├── httpServer/        # Fiber server handlers
-│   ├── models/            # DB and API data models
-│   ├── repositories/      # All work with postgres here
-│   ├── services/          # Business logic
-│   ├── tonclient/         # TON blockchain client, wrap some usefull functions
-│   └── workers/           # Workers
-├── db/                    # Database schema
-├── scripts/               # Setup and utility scripts
-```
+Standalone Prometheus + Grafana + Loki for development (scrapes agent metrics on the host): [observability/prometheus-grafana/README.md](observability/prometheus-grafana/README.md).
 
-## API Endpoints
+## Coordinator API and workers
 
-The server provides REST API endpoints for:
-- Telemetry data collection
-- Provider info and filters tool
-- Metrics
+REST API (Fiber): telemetry, provider listing/filters, metrics.
 
-## Workers
+Background workers:
 
-The application runs several background workers:
-- **Providers Master**: Manages provider lifecycle and health checks
-- **Telemetry Worker**: Processes incoming telemetry data
-- **Cleaner Worker**: Maintains database hygiene and cleanup
+- **Providers Master** — provider lifecycle, health checks, gRPC to agents
+- **Telemetry Worker** — incoming provider telemetry
+- **Cleaner Worker** — database retention
 
 ## License
- 
-Apache-2.0
 
-
+Apache-2.0 — see [LICENSE](LICENSE).
 
 This project was created by order of a TON Foundation community member.

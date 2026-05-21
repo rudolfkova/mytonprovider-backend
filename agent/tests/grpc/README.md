@@ -16,12 +16,7 @@ Runs agent with local test config and local certs.
 task agent:test:smoke
 ```
 
-Starts agent in background, runs 3 checks via `grpcurl`, writes logs and outputs into:
-
-- `agent/tests/grpc/reports/agent.log`
-- `agent/tests/grpc/reports/runchecks-valid.out`
-- `agent/tests/grpc/reports/runchecks-invalid-token.out`
-- `agent/tests/grpc/reports/runchecks-invalid-payload.out`
+Requires a running test agent (`task agent:run:test` in another terminal). Runs 3 `grpcurl` checks; optional report files under `agent/tests/grpc/reports/` (gitignored): `runchecks-valid.out`, `runchecks-invalid-token.out`, `runchecks-invalid-payload.out`.
 
 ## Real request flow
 
