@@ -1,5 +1,7 @@
 # gRPC smoke tests
 
+**[Русская версия](README.ru.md)**
+
 These smoke checks run without coordinator and validate agent behavior directly via `grpcurl`.
 
 ## Commands

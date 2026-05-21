@@ -1,5 +1,7 @@
 # Agent TLS Setup (No DNS)
 
+**[Русская версия](README.ru.md)**
+
 This service expects TLS cert and key files at startup. For internet-facing VPS nodes,
 use your own CA and issue per-agent server certificates with IP SAN entries.
 

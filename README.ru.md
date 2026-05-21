@@ -1,5 +1,7 @@
 # mytonprovider-backend
 
+**[English version](README.md)**
+
 Backend для [mytonprovider.org](https://mytonprovider.org) — мониторинг и проверки здоровья провайдеров TON Storage.
 
 ## Архитектура
@@ -49,9 +51,9 @@ task agent:run:test
 task agent:test:smoke
 ```
 
-Живые проверки с реальными данными TON: [agent/tests/grpc/README.md](agent/tests/grpc/README.md).
+Живые проверки с реальными данными TON: [agent/tests/grpc/README.md](agent/tests/grpc/README.md) · [RU](agent/tests/grpc/README.ru.md).
 
-**TLS для продакшн-агентов:** [agent/README.md](agent/README.md)
+**TLS для продакшн-агентов:** [agent/README.md](agent/README.md) · [RU](agent/README.ru.md)
 
 ### VS Code
 
@@ -84,20 +86,21 @@ task agent:test:smoke
 
 ## Docker-деплой (VPS)
 
-Сценарий: клон → `task` init → правка `.env` → `up`.
+| Стек | Документация | Заметка |
+|------|----------------|---------|
+| Agent (+ опционально мониторинг) | [EN](agent/deploy/README.md) · [RU](agent/deploy/README.ru.md) | **VPS: лучше Docker Hub** — сборка образа локально, pull на сервере |
+| Coordinator (+ Postgres + мониторинг) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | Образ coordinator **собирается на VPS** (`deploy:up`) |
 
-| Стек | Документация |
-|------|----------------|
-| Agent (+ опционально мониторинг) | [agent/deploy/README.md](agent/deploy/README.md) |
-| Coordinator (+ Postgres + мониторинг) | [coordinator/deploy/README.md](coordinator/deploy/README.md) |
-
-Быстрый старт:
+**Агент на VPS (рекомендуется):** сборка и push на dev-машине, затем hub — см. [agent/deploy/README.ru.md](agent/deploy/README.ru.md).
 
 ```bash
-task agent:deploy:init
-nano agent/deploy/.env
-task agent:deploy:up
+# Dev-машина
+AGENT_IMAGE=<user>/mytonprovider-agent:latest task agent:image:build:push
+# VPS
+task agent:hub:init && nano agent/deploy/.env.hub && task agent:hub:stack:up
 ```
+
+**Coordinator — быстрый старт** (сборка на VPS):
 
 ```bash
 task coordinator:deploy:init
@@ -105,9 +108,17 @@ nano coordinator/deploy/.env
 task coordinator:deploy:up
 ```
 
+**Агент со сборкой на VPS** (только dev / отладка):
+
+```bash
+task agent:deploy:init
+nano agent/deploy/.env
+task agent:deploy:up
+```
+
 ## Локальная observability
 
-Отдельный стек Prometheus + Grafana + Loki для разработки: [observability/prometheus-grafana/README.md](observability/prometheus-grafana/README.md).
+Prometheus + Grafana + Loki для разработки: [EN](observability/prometheus-grafana/README.md) · [RU](observability/prometheus-grafana/README.ru.md).
 
 ## API и воркеры coordinator
 

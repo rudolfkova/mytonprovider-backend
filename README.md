@@ -51,9 +51,9 @@ In another terminal — gRPC smoke tests (agent must already be running):
 task agent:test:smoke
 ```
 
-Live checks against real TON data: see [agent/tests/grpc/README.md](agent/tests/grpc/README.md).
+Live checks against real TON data: [agent/tests/grpc/README.md](agent/tests/grpc/README.md) · [RU](agent/tests/grpc/README.ru.md).
 
-**TLS for production agents:** [agent/README.md](agent/README.md)
+**TLS for production agents:** [agent/README.md](agent/README.md) · [RU](agent/README.ru.md)
 
 ### VS Code
 
@@ -86,20 +86,21 @@ Set `env` in each configuration to match `coordinator/deploy/.env.example` or te
 
 ## Docker deploy (VPS)
 
-Operator flow: clone → `task` init → edit `.env` → `up`.
+| Stack | Docs | Notes |
+|-------|------|--------|
+| Agent (+ optional monitoring) | [EN](agent/deploy/README.md) · [RU](agent/deploy/README.ru.md) | **VPS: prefer Docker Hub** — build image locally, pull on server |
+| Coordinator (+ Postgres + monitoring) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | Builds coordinator image **on VPS** (`deploy:up`) |
 
-| Stack | Docs |
-|-------|------|
-| Agent (+ optional monitoring) | [agent/deploy/README.md](agent/deploy/README.md) |
-| Coordinator (+ Postgres + monitoring) | [coordinator/deploy/README.md](coordinator/deploy/README.md) |
-
-Quick start:
+**Agent on VPS (recommended):** build and push on your machine, then hub deploy — see [agent/deploy/README.md](agent/deploy/README.md#production--vps-docker-hub--recommended).
 
 ```bash
-task agent:deploy:init
-nano agent/deploy/.env
-task agent:deploy:up
+# Dev machine
+AGENT_IMAGE=<user>/mytonprovider-agent:latest task agent:image:build:push
+# VPS
+task agent:hub:init && nano agent/deploy/.env.hub && task agent:hub:stack:up
 ```
+
+**Coordinator quick start** (build on VPS):
 
 ```bash
 task coordinator:deploy:init
@@ -107,9 +108,17 @@ nano coordinator/deploy/.env
 task coordinator:deploy:up
 ```
 
+**Agent build on VPS** (dev / debugging only):
+
+```bash
+task agent:deploy:init
+nano agent/deploy/.env
+task agent:deploy:up
+```
+
 ## Local observability
 
-Standalone Prometheus + Grafana + Loki for development (scrapes agent metrics on the host): [observability/prometheus-grafana/README.md](observability/prometheus-grafana/README.md).
+Prometheus + Grafana + Loki for development: [EN](observability/prometheus-grafana/README.md) · [RU](observability/prometheus-grafana/README.ru.md).
 
 ## Coordinator API and workers
 

@@ -1,5 +1,7 @@
 # Postman gRPC tests
 
+**[Русская версия](README.ru.md)**
+
 Files:
 
 - `agent-grpc.postman_collection.json` - smoke and negative tests for `RunChecks`.

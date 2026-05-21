@@ -1,53 +1,55 @@
-# Prometheus + Grafana + Loki (локальный стек)
+# Prometheus + Grafana + Loki (local stack)
 
-## Метрики агента (Prometheus)
+**[Русская версия](README.ru.md)**
 
-Контейнер Prometheus ходит на хост через **`host.docker.internal`**. Агент должен слушать метрики на **`0.0.0.0:9090`**, иначе target будет DOWN.
+## Agent metrics (Prometheus)
+
+The Prometheus container reaches the host via **`host.docker.internal`**. The agent must listen on **`0.0.0.0:9090`** for metrics, otherwise the scrape target stays DOWN.
 
 ```bash
 export AGENT_METRICS_LISTEN_ADDR=0.0.0.0:9090
 ```
 
-## Запуск compose
+## Start compose
 
-Из этой директории:
+From this directory:
 
 ```bash
 task up
-# из корня: task -t observability/prometheus-grafana/Taskfile.yml up
+# from repo root: task -t observability/prometheus-grafana/Taskfile.yml up
 ```
 
 - **Prometheus:** http://127.0.0.1:9091  
 - **Grafana:** http://127.0.0.1:3000 — `admin` / `admin`  
-- **Loki:** http://127.0.0.1:3100 — приём **push** от агента (`POST /loki/api/v1/push`)
+- **Loki:** http://127.0.0.1:3100 — **push** from agent (`POST /loki/api/v1/push`)
 
-Datasources **Prometheus** и **Loki** подключаются из `grafana/provisioning`.
+Datasources **Prometheus** and **Loki** are provisioned from `grafana/provisioning`.
 
-## RunChecks: таблицы в Grafana (без плагинов)
+## RunChecks: Grafana tables (no plugins)
 
-После каждого **RunChecks** агент может отправлять в Loki компактные JSON-строки (одна на джобу + по одной на каждый **storage IP**).
+After each **RunChecks**, the agent can push compact JSON lines to Loki (one per job + one per **storage IP**).
 
-1. Подними compose (`task up`).
-2. Запусти агента с **`AGENT_LOKI_URL=http://127.0.0.1:3100`** (если Loki на том же хосте; без trailing slash). Корневой **`task agent:run:test`** уже задаёт этот URL.
-3. В Grafana: **Dashboards → Agent → RunChecks jobs (Loki)** — таблица джоб и таблица по IP (переменная **job_id**, значение **All** = все джобы).
+1. Start compose (`task up`).
+2. Run the agent with **`AGENT_LOKI_URL=http://127.0.0.1:3100`** (same host as Loki; no trailing slash). Root **`task agent:run:test`** sets this URL.
+3. In Grafana: **Dashboards → Agent → RunChecks jobs (Loki)** — job table and IP table (variable **job_id**, **All** = all jobs).
 
-Поля в JSON включают `valid`, `invalid`, `total`, `duration_ms`, `finished_unix` и счётчики **`n_<REASON_CODE>`** (числа, нули для отсутствующих кодов).
+JSON fields include `valid`, `invalid`, `total`, `duration_ms`, `finished_unix`, and **`n_<REASON_CODE>`** counters (numbers; missing codes are zero).
 
-Если **`AGENT_LOKI_URL` пустой**, push не выполняется.
+If **`AGENT_LOKI_URL` is empty**, no push is performed.
 
-## Дашборды
+## Dashboards
 
-- **Mytonprovider agent** — метрики Prometheus (gRPC, RunChecks counters и т.д.).
-- **RunChecks jobs (Loki)** — таблицы по push-событиям.
+- **Mytonprovider agent** — Prometheus metrics (gRPC, RunChecks counters, etc.).
+- **RunChecks jobs (Loki)** — tables from push events.
 
-## Остановка
+## Stop
 
 ```bash
 task down
-task down:clean   # удалит volumes Prometheus / Grafana / Loki
+task down:clean   # removes Prometheus / Grafana / Loki volumes
 ```
 
-## Примеры в Explore
+## Explore examples
 
 **Prometheus:** `agent_grpc_requests_total`, `rate(agent_grpc_requests_total[1m])`
 
