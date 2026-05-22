@@ -141,7 +141,8 @@ func (w *providersMasterWorker) BuildRunChecksRequest(ctx context.Context, jobID
 
 	for _, pk := range pubkeys {
 		ip := availableProvidersIPs[pk]
-		endpoint, ok := selectRunChecksEndpoint(ip)
+		// Dump reflects StoreProof phase 1 only (storage endpoint); phase 2 retry is not included.
+		endpoint, ok := selectStorageEndpoint(ip)
 		if !ok {
 			continue
 		}

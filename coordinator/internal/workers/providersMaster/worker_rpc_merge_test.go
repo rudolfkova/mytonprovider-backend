@@ -58,6 +58,58 @@ func TestMergeRunChecksResponses_PrefersValidProof(t *testing.T) {
 	}
 }
 
+func TestMergeRunChecksResponses_Phase2ValidOverridesPhase1Failure(t *testing.T) {
+	contracts := []db.ContractToProviderRelation{
+		{
+			ProviderPublicKey: "pub-1",
+			ProviderAddress:   "provider-addr-1",
+			Address:           "contract-1",
+			BagID:             "bag-1",
+		},
+	}
+
+	phase1 := []agentrpc.RunChecksResult{
+		{
+			Endpoint: "agent-eu-1",
+			Response: &providerchecksv1.RunChecksResponse{
+				Results: []*providerchecksv1.ContractCheckResult{
+					{
+						ProviderAddress: "provider-addr-1",
+						ContractAddress: "contract-1",
+						ReasonCode:      providerchecksv1.ReasonCode_FAILED_INITIAL_PING,
+					},
+				},
+			},
+		},
+	}
+	phase2 := []agentrpc.RunChecksResult{
+		{
+			Endpoint: "agent-eu-1",
+			Response: &providerchecksv1.RunChecksResponse{
+				Results: []*providerchecksv1.ContractCheckResult{
+					{
+						ProviderAddress: "provider-addr-1",
+						ContractAddress: "contract-1",
+						ReasonCode:      providerchecksv1.ReasonCode_VALID_STORAGE_PROOF,
+					},
+				},
+			},
+		},
+	}
+
+	all := append(phase1, phase2...)
+	merged, valid := mergeRunChecksResponses(contracts, all)
+	if len(merged) != 1 {
+		t.Fatalf("expected 1 merged row, got %d", len(merged))
+	}
+	if merged[0].Reason != constants.ValidStorageProof {
+		t.Fatalf("expected valid after phase2, got %d", merged[0].Reason)
+	}
+	if valid != 1 {
+		t.Fatalf("expected valid counter=1, got %d", valid)
+	}
+}
+
 func TestMergeStorageRatesResponses_PrefersOkResult(t *testing.T) {
 	pubkeys := []string{"pub-1"}
 	responses := []agentrpc.RunStorageRatesResult{

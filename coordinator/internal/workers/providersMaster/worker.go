@@ -610,20 +610,39 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 		return fmt.Errorf("no configured agent clients for RunChecks")
 	}
 
-	req, providerCount := w.buildRunChecksRPCRequest(storageContracts, availableProvidersIPs)
+	req1, providerCount := w.buildRunChecksRPCRequest(storageContracts, availableProvidersIPs, selectStorageEndpoint, "")
 	if providerCount == 0 {
 		return fmt.Errorf("no providers with resolved endpoints for RunChecks")
 	}
 
-	responses, callErrs := w.agentClient.RunChecksAll(ctx, req)
+	responses1, callErrs := w.agentClient.RunChecksAll(ctx, req1)
 	for _, callErr := range callErrs {
-		log.Warn("RunChecks failed for agent", "endpoint", callErr.Endpoint, "error", callErr.Err)
+		log.Warn("RunChecks phase1 failed for agent", "endpoint", callErr.Endpoint, "error", callErr.Err)
 	}
-	if len(responses) == 0 {
-		return fmt.Errorf("all agents are unavailable for RunChecks")
+	if len(responses1) == 0 {
+		return fmt.Errorf("all agents are unavailable for RunChecks phase1")
 	}
 
-	contractProofsChecks, valid := mergeRunChecksResponses(storageContracts, responses)
+	phase1Contracts := countRunChecksContracts(req1)
+	retryContracts := collectProviderPortRetryContracts(storageContracts, responses1, availableProvidersIPs)
+
+	allResponses := responses1
+	phase2JobID := ""
+	if len(retryContracts) > 0 {
+		phase2JobID = fmt.Sprintf("storeproof-retry-%d", time.Now().Unix())
+		req2, retryProviderCount := w.buildRunChecksRPCRequest(retryContracts, availableProvidersIPs, selectProviderEndpoint, phase2JobID)
+		if retryProviderCount > 0 {
+			responses2, callErrs2 := w.agentClient.RunChecksAll(ctx, req2)
+			for _, callErr := range callErrs2 {
+				log.Warn("RunChecks phase2 failed for agent", "endpoint", callErr.Endpoint, "error", callErr.Err)
+			}
+			if len(responses2) > 0 {
+				allResponses = append(allResponses, responses2...)
+			}
+		}
+	}
+
+	contractProofsChecks, valid := mergeRunChecksResponses(storageContracts, allResponses)
 
 	err = w.providers.UpdateContractProofsChecks(ctx, contractProofsChecks)
 	if err != nil {
@@ -631,18 +650,61 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 		return
 	}
 
+	phase2Valid := countValidAmongContracts(retryContracts, contractProofsChecks)
+
 	log.Info(
 		"successfully updated contract proofs checks",
 		"count", len(contractProofsChecks),
 		"valid", valid,
+		"phase1_job_id", req1.GetJobId(),
+		"phase1_contracts", phase1Contracts,
+		"phase2_job_id", phase2JobID,
+		"phase2_retry_contracts", len(retryContracts),
+		"phase2_valid", phase2Valid,
 		"agents_total", w.agentClient.AgentCount(),
-		"agents_successful", len(responses),
+		"agents_successful", len(allResponses),
 	)
 
 	return nil
 }
 
-func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (*providerchecksv1.RunChecksRequest, int) {
+func countRunChecksContracts(req *providerchecksv1.RunChecksRequest) int {
+	if req == nil {
+		return 0
+	}
+	n := 0
+	for _, p := range req.GetProviders() {
+		if p == nil {
+			continue
+		}
+		n += len(p.GetContracts())
+	}
+	return n
+}
+
+func countValidAmongContracts(contracts []db.ContractToProviderRelation, checks []db.ContractProofsCheck) int {
+	if len(contracts) == 0 {
+		return 0
+	}
+	byKey := make(map[string]constants.ReasonCode, len(checks))
+	for _, c := range checks {
+		byKey[contractRelationKey(c.ProviderAddress, c.ContractAddress)] = c.Reason
+	}
+	valid := 0
+	for _, sc := range contracts {
+		if byKey[contractRelationKey(sc.ProviderAddress, sc.Address)] == constants.ValidStorageProof {
+			valid++
+		}
+	}
+	return valid
+}
+
+func (w *providersMasterWorker) buildRunChecksRPCRequest(
+	storageContracts []db.ContractToProviderRelation,
+	availableProvidersIPs map[string]db.ProviderIP,
+	pickEndpoint func(db.ProviderIP) (db.IPInfo, bool),
+	jobID string,
+) (*providerchecksv1.RunChecksRequest, int) {
 	providersContracts := make(map[string][]db.ContractToProviderRelation)
 	for _, sc := range storageContracts {
 		providersContracts[sc.ProviderPublicKey] = append(providersContracts[sc.ProviderPublicKey], sc)
@@ -654,7 +716,7 @@ func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.C
 		if !ok {
 			continue
 		}
-		endpoint, ok := selectRunChecksEndpoint(ip)
+		endpoint, ok := pickEndpoint(ip)
 		if !ok {
 			continue
 		}
@@ -677,8 +739,12 @@ func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.C
 		})
 	}
 
+	if jobID == "" {
+		jobID = fmt.Sprintf("storeproof-%d", time.Now().Unix())
+	}
+
 	return &providerchecksv1.RunChecksRequest{
-		JobId:     fmt.Sprintf("storeproof-%d", time.Now().Unix()),
+		JobId:     jobID,
 		Providers: providers,
 		Timeouts: &providerchecksv1.CheckTimeouts{
 			PingMs:  w.timeouts.PingMs,
