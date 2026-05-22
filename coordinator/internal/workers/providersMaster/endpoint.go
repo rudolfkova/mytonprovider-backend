@@ -51,25 +51,48 @@ func pubkeysEqual(a, b ed25519.PublicKey) bool {
 	return true
 }
 
-// shouldRetryWithProviderPort decides if phase-1 failure may be retried on provider endpoint.
-// Broad for now: any non-valid; narrow later by filtering reason codes here.
+// shouldRetryWithProviderPort: phase-2 targets storage initial ping failures (likely wrong port).
 func shouldRetryWithProviderPort(reason constants.ReasonCode) bool {
-	return reason != constants.ValidStorageProof
+	return reason == constants.FailedInitialPing
 }
 
 func contractRelationKey(providerAddress, contractAddress string) string {
 	return providerAddress + "|" + contractAddress
 }
 
-// collectProviderPortRetryContracts returns contracts to re-check via provider DHT endpoint
-// after phase 1 used storage endpoint and failed.
+// indexValidContractKeys returns contract keys with VALID_STORAGE_PROOF from agent responses.
+func indexValidContractKeys(responses []agentrpc.RunChecksResult) map[string]struct{} {
+	valid := make(map[string]struct{})
+	for _, agentResp := range responses {
+		if agentResp.Response == nil {
+			continue
+		}
+		for _, row := range agentResp.Response.GetResults() {
+			if row == nil {
+				continue
+			}
+			if reasonFromProto(row.GetReasonCode()) != constants.ValidStorageProof {
+				continue
+			}
+			valid[contractRelationKey(row.GetProviderAddress(), row.GetContractAddress())] = struct{}{}
+		}
+	}
+	return valid
+}
+
+// collectProviderPortRetryContracts picks contracts for phase 2 (provider endpoint):
+// - phase 1 used storage endpoint and got FAILED_INITIAL_PING on at least one agent
+// - no agent returned VALID in phase 1
+// - storage and provider endpoints differ
 func collectProviderPortRetryContracts(
 	storageContracts []db.ContractToProviderRelation,
-	responses []agentrpc.RunChecksResult,
+	phase1Responses []agentrpc.RunChecksResult,
 	availableProvidersIPs map[string]db.ProviderIP,
 ) []db.ContractToProviderRelation {
-	failedKeys := make(map[string]struct{})
-	for _, agentResp := range responses {
+	phase1Valid := indexValidContractKeys(phase1Responses)
+
+	storagePingFailed := make(map[string]struct{})
+	for _, agentResp := range phase1Responses {
 		if agentResp.Response == nil {
 			continue
 		}
@@ -81,15 +104,18 @@ func collectProviderPortRetryContracts(
 			if !shouldRetryWithProviderPort(reason) {
 				continue
 			}
-			failedKeys[contractRelationKey(row.GetProviderAddress(), row.GetContractAddress())] = struct{}{}
+			storagePingFailed[contractRelationKey(row.GetProviderAddress(), row.GetContractAddress())] = struct{}{}
 		}
 	}
 
 	retry := make([]db.ContractToProviderRelation, 0)
-	seen := make(map[string]struct{}, len(failedKeys))
+	seen := make(map[string]struct{}, len(storagePingFailed))
 	for _, sc := range storageContracts {
 		key := contractRelationKey(sc.ProviderAddress, sc.Address)
-		if _, failed := failedKeys[key]; !failed {
+		if _, ok := phase1Valid[key]; ok {
+			continue
+		}
+		if _, ok := storagePingFailed[key]; !ok {
 			continue
 		}
 		ip, ok := availableProvidersIPs[sc.ProviderPublicKey]
@@ -109,4 +135,22 @@ func collectProviderPortRetryContracts(
 		retry = append(retry, sc)
 	}
 	return retry
+}
+
+// countPhase2RescuedContracts counts retry-set contracts that became VALID only in phase-2 responses.
+func countPhase2RescuedContracts(
+	retryContracts []db.ContractToProviderRelation,
+	phase2Responses []agentrpc.RunChecksResult,
+) int {
+	if len(retryContracts) == 0 {
+		return 0
+	}
+	phase2Valid := indexValidContractKeys(phase2Responses)
+	rescued := 0
+	for _, sc := range retryContracts {
+		if _, ok := phase2Valid[contractRelationKey(sc.ProviderAddress, sc.Address)]; ok {
+			rescued++
+		}
+	}
+	return rescued
 }

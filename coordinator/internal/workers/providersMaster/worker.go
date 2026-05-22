@@ -628,6 +628,7 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 
 	allResponses := responses1
 	phase2JobID := ""
+	var responses2 []agentrpc.RunChecksResult
 	if len(retryContracts) > 0 {
 		phase2JobID = fmt.Sprintf("storeproof-retry-%d", time.Now().Unix())
 		req2, retryProviderCount := w.buildRunChecksRPCRequest(retryContracts, availableProvidersIPs, selectProviderEndpoint, phase2JobID)
@@ -650,7 +651,7 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 		return
 	}
 
-	phase2Valid := countValidAmongContracts(retryContracts, contractProofsChecks)
+	phase2Rescued := countPhase2RescuedContracts(retryContracts, responses2)
 
 	log.Info(
 		"successfully updated contract proofs checks",
@@ -660,7 +661,7 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 		"phase1_contracts", phase1Contracts,
 		"phase2_job_id", phase2JobID,
 		"phase2_retry_contracts", len(retryContracts),
-		"phase2_valid", phase2Valid,
+		"phase2_rescued", phase2Rescued,
 		"agents_total", w.agentClient.AgentCount(),
 		"agents_successful", len(allResponses),
 	)
@@ -680,23 +681,6 @@ func countRunChecksContracts(req *providerchecksv1.RunChecksRequest) int {
 		n += len(p.GetContracts())
 	}
 	return n
-}
-
-func countValidAmongContracts(contracts []db.ContractToProviderRelation, checks []db.ContractProofsCheck) int {
-	if len(contracts) == 0 {
-		return 0
-	}
-	byKey := make(map[string]constants.ReasonCode, len(checks))
-	for _, c := range checks {
-		byKey[contractRelationKey(c.ProviderAddress, c.ContractAddress)] = c.Reason
-	}
-	valid := 0
-	for _, sc := range contracts {
-		if byKey[contractRelationKey(sc.ProviderAddress, sc.Address)] == constants.ValidStorageProof {
-			valid++
-		}
-	}
-	return valid
 }
 
 func (w *providersMasterWorker) buildRunChecksRPCRequest(
