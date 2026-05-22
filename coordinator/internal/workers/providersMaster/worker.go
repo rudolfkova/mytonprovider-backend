@@ -651,7 +651,11 @@ func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.C
 	providers := make([]*providerchecksv1.ProviderBatch, 0, len(providersContracts))
 	for pubkey, contracts := range providersContracts {
 		ip, ok := availableProvidersIPs[pubkey]
-		if !ok || strings.TrimSpace(ip.Storage.IP) == "" || ip.Storage.Port <= 0 || len(ip.Storage.PublicKey) != ed25519.PublicKeySize {
+		if !ok {
+			continue
+		}
+		endpoint, ok := selectRunChecksEndpoint(ip)
+		if !ok {
 			continue
 		}
 		contractRefs := make([]*providerchecksv1.ContractRef, 0, len(contracts))
@@ -665,9 +669,9 @@ func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.C
 			ProviderPubkey:  pubkey,
 			ProviderAddress: contracts[0].ProviderAddress,
 			StorageEndpoint: &providerchecksv1.Endpoint{
-				Ip:         ip.Storage.IP,
-				Port:       ip.Storage.Port,
-				AdnlPubkey: append([]byte(nil), ip.Storage.PublicKey...),
+				Ip:         endpoint.IP,
+				Port:       endpoint.Port,
+				AdnlPubkey: append([]byte(nil), endpoint.PublicKey...),
 			},
 			Contracts: contractRefs,
 		})

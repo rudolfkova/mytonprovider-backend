@@ -141,7 +141,8 @@ func (w *providersMasterWorker) BuildRunChecksRequest(ctx context.Context, jobID
 
 	for _, pk := range pubkeys {
 		ip := availableProvidersIPs[pk]
-		if len(ip.Storage.PublicKey) != ed25519.PublicKeySize {
+		endpoint, ok := selectRunChecksEndpoint(ip)
+		if !ok {
 			continue
 		}
 
@@ -162,9 +163,9 @@ func (w *providersMasterWorker) BuildRunChecksRequest(ctx context.Context, jobID
 			ProviderPubkey:  pk,
 			ProviderAddress: contracts[0].ProviderAddress,
 			StorageEndpoint: EndpointPayload{
-				IP:         ip.Storage.IP,
-				Port:       ip.Storage.Port,
-				ADNLPubkey: ip.Storage.PublicKey,
+				IP:         endpoint.IP,
+				Port:       endpoint.Port,
+				ADNLPubkey: endpoint.PublicKey,
 			},
 			Contracts: contractRefs,
 		})
