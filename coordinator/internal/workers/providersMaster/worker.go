@@ -1040,7 +1040,8 @@ func (w *providersMasterWorker) updateRejectedContracts(ctx context.Context, sto
 	for _, sc := range storageContracts {
 		if contractInfo, exists := activeRelations[sc.Address]; exists {
 			if contractInfo.skip {
-				log.Debug("lite servers is not available, skip providers check for", "address", sc.Address)
+				log.Debug("lite servers is not available, keep contract active for current cycle", "address", sc.Address)
+				activeContracts = append(activeContracts, sc)
 				continue
 			}
 
@@ -1100,11 +1101,10 @@ func (w *providersMasterWorker) updateProvidersIPs(ctx context.Context, storageC
 			defer func() { <-semaphore }()
 
 			providerIPs, pErr := w.findProviderIPs(ctx, contract, log)
+			mu.Lock()
 			if pErr != nil {
 				notFoundIPs = append(notFoundIPs, contract.ProviderPublicKey)
 			}
-
-			mu.Lock()
 			availableProvidersIPs[contract.ProviderPublicKey] = providerIPs
 			mu.Unlock()
 		}(sc)

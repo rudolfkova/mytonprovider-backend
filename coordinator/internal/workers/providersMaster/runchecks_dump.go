@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -141,7 +142,7 @@ func (w *providersMasterWorker) BuildRunChecksRequest(ctx context.Context, jobID
 
 	for _, pk := range pubkeys {
 		ip := availableProvidersIPs[pk]
-		if len(ip.Storage.PublicKey) != ed25519.PublicKeySize {
+		if strings.TrimSpace(ip.Storage.IP) == "" || ip.Storage.Port <= 0 || len(ip.Storage.PublicKey) != ed25519.PublicKeySize {
 			continue
 		}
 
