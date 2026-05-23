@@ -15,8 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/xssnick/tonutils-go/adnl"
 	"github.com/xssnick/tonutils-go/adnl/dht"
-	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
+
+	tonclient "mytonprovider-coordinator/internal/clients/ton"
 )
 
 var logLevels = map[uint8]slog.Level{
@@ -161,7 +162,7 @@ func newPostgresConfig(config *Config, logger *slog.Logger) (dbConfig *pgxpool.C
 }
 
 func newProviderClient(ctx context.Context, configURL, adnlPort string, privateKey ed25519.PrivateKey) (dc *dht.Client, tc *transport.Client, err error) {
-	lsCfg, err := liteclient.GetConfigFromUrl(ctx, configURL)
+	lsCfg, err := tonclient.LoadGlobalConfig(ctx, configURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get liteclient config: %w", err)
 	}

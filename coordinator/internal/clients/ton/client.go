@@ -279,9 +279,9 @@ func parseTx(tx *tlb.Transaction) (res *Transaction, ok bool) {
 func NewClient(ctx context.Context, configUrl string, logger *slog.Logger) (Client, error) {
 	clientPool := liteclient.NewConnectionPool()
 
-	err := clientPool.AddConnectionsFromConfigUrl(ctx, configUrl)
+	err := AddConnectionsFromConfigURL(ctx, clientPool, configUrl)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("liteclient pool: %w", err)
 	}
 
 	return &client{

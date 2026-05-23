@@ -23,6 +23,7 @@ services:
       - "${COORDINATOR_PORT:-8080}:9090"
     volumes:
       - ./secrets:/run/secrets:ro
+      - ./ton-mainnet-liteserver-4701.config.json:/etc/ton/ton-mainnet-liteserver-4701.config.json:ro
     depends_on:
       - postgres
 

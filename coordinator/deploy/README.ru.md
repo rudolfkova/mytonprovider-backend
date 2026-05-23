@@ -44,6 +44,18 @@ nano coordinator/deploy/.env
 
 Содержимое `metrics.token` должно входить в `SYSTEM_ACCESS_TOKENS` в `.env`.
 
+### Конфиг TON lite server
+
+По умолчанию [`.env.example`](.env.example) указывает на [`ton-mainnet-liteserver-4701.config.json`](ton-mainnet-liteserver-4701.config.json): DHT и validator из публичного global config, но **один** liteserver заказчика — **185.157.250.201:4701** (ключ `G6cNAr6wXBBByWDzddEWP5xMFsAcp6y13fXA8Q7EJlM=`). Compose монтирует файл в контейнер координатора.
+
+В `.env`:
+
+```bash
+TON_CONFIG_URL=/etc/ton/ton-mainnet-liteserver-4701.config.json
+```
+
+Вне Docker — путь к файлу на диске или `file:///абсолютный/путь/ton-mainnet-liteserver-4701.config.json`.
+
 ## 2) Запуск
 
 ```bash

@@ -44,6 +44,18 @@ Place secret files:
 
 `metrics.token` content must be included in `SYSTEM_ACCESS_TOKENS` in `.env`.
 
+### TON lite server config
+
+By default, [`.env.example`](.env.example) points to [`ton-mainnet-liteserver-4701.config.json`](ton-mainnet-liteserver-4701.config.json): mainnet DHT/validator from the public global config, but **only** the customer liteserver at **185.157.250.201:4701** (ADNL key `G6cNAr6wXBBByWDzddEWP5xMFsAcp6y13fXA8Q7EJlM=`). Compose mounts this file into the coordinator container.
+
+Set in `.env`:
+
+```bash
+TON_CONFIG_URL=/etc/ton/ton-mainnet-liteserver-4701.config.json
+```
+
+For local runs outside Docker, use a filesystem path or `file:///absolute/path/to/ton-mainnet-liteserver-4701.config.json`.
+
 ## 2) Start
 
 ```bash
