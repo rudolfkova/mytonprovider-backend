@@ -55,6 +55,10 @@ const (
 	getTxTimeout            = 20 * time.Second
 	ipInfoTimeout           = 10 * time.Second
 	ipInfoSleepDuration     = 1 * time.Second
+
+	defaultEndpointStaleTTL                = 12 * time.Hour
+	defaultEndpointFullRefreshInterval     = 6 * time.Hour
+	defaultEndpointFullRefreshFailInterval = 30 * time.Second
 )
 
 type providers interface {
@@ -73,6 +77,7 @@ type providers interface {
 	UpdateUptime(ctx context.Context) (err error)
 	UpdateRating(ctx context.Context) (err error)
 	GetProvidersIPs(ctx context.Context) (ips []db.ProviderIP, err error)
+	GetProvidersEndpointState(ctx context.Context, pubkeys []string) (rows []db.ProviderEndpointState, err error)
 	UpdateProvidersIPInfo(ctx context.Context, ips []db.ProviderIPInfo) (err error)
 }
 
@@ -104,6 +109,12 @@ type RunChecksTimeouts struct {
 	StorageRatesQueryMs uint32
 }
 
+type EndpointRefreshConfig struct {
+	StaleTTL            time.Duration
+	FullRefreshInterval time.Duration
+	FailInterval        time.Duration
+}
+
 type providersMasterWorker struct {
 	providers      providers
 	system         system
@@ -116,7 +127,10 @@ type providersMasterWorker struct {
 	masterAddr     string
 	batchSize      uint32
 	timeouts       RunChecksTimeouts
+	endpointCfg    EndpointRefreshConfig
 	logger         *slog.Logger
+	lastIPsMu      sync.RWMutex
+	lastKnownIPs   map[string]db.ProviderIP
 }
 
 type Worker interface {
@@ -127,6 +141,7 @@ type Worker interface {
 	UpdateUptime(ctx context.Context) (interval time.Duration, err error)
 	UpdateRating(ctx context.Context) (interval time.Duration, err error)
 	UpdateIPInfo(ctx context.Context) (interval time.Duration, err error)
+	RefreshEndpointsFull(ctx context.Context) (interval time.Duration, err error)
 }
 
 func (w *providersMasterWorker) CollectNewProviders(ctx context.Context) (interval time.Duration, err error) {
@@ -467,6 +482,10 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 		interval = failureInterval
 
 		return
+	}
+
+	if _, refreshErr := w.refreshProvidersEndpoints(ctx, storageContracts, true); refreshErr != nil {
+		log.Warn("stale-first endpoint refresh failed before StoreProof", "error", refreshErr)
 	}
 
 	storageContracts, err = w.updateRejectedContracts(ctx, storageContracts)
@@ -1069,96 +1088,7 @@ func (w *providersMasterWorker) updateRejectedContracts(ctx context.Context, sto
 }
 
 func (w *providersMasterWorker) updateProvidersIPs(ctx context.Context, storageContracts []db.ContractToProviderRelation) (availableProvidersIPs map[string]db.ProviderIP, err error) {
-	log := w.logger.With(slog.String("worker", "StoreProof"), slog.String("function", "updateProvidersIPs"))
-
-	if len(storageContracts) == 0 {
-		log.Debug("no storage contracts to process for IP update")
-		return
-	}
-
-	uniqueProviders := make(map[string]db.ContractToProviderRelation)
-	for _, sc := range storageContracts {
-		if _, exists := uniqueProviders[sc.ProviderPublicKey]; !exists {
-			uniqueProviders[sc.ProviderPublicKey] = sc
-		}
-	}
-
-	availableProvidersIPs = make(map[string]db.ProviderIP, len(uniqueProviders))
-	notFoundIPs := make([]string, 0)
-
-	semaphore := make(chan struct{}, maxConcurrentProviderChecks)
-
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	// try to find storage IPs using provider's storage adnl proof
-	for _, sc := range uniqueProviders {
-		wg.Add(1)
-		go func(contract db.ContractToProviderRelation) {
-			defer wg.Done()
-
-			semaphore <- struct{}{}
-			defer func() { <-semaphore }()
-
-			providerIPs, pErr := w.findProviderIPs(ctx, contract, log)
-			mu.Lock()
-			if pErr != nil {
-				notFoundIPs = append(notFoundIPs, contract.ProviderPublicKey)
-			}
-			availableProvidersIPs[contract.ProviderPublicKey] = providerIPs
-			mu.Unlock()
-		}(sc)
-	}
-
-	wg.Wait()
-
-	// reserve way. Try to find storage IPs using overlay DHT for not found IPs
-	for _, pk := range notFoundIPs {
-		ip := availableProvidersIPs[pk]
-		// nothing we can do if provider IP not found
-		if ip.Provider.IP == "" {
-			log.Info("provider IP not found", "provider_pubkey", pk)
-			delete(availableProvidersIPs, pk)
-			continue
-		}
-
-		providerContracts := make([]db.ContractToProviderRelation, 0)
-		for _, sc := range storageContracts {
-			if sc.ProviderPublicKey == pk {
-				providerContracts = append(providerContracts, sc)
-			}
-		}
-
-		if len(providerContracts) == 0 {
-			log.Info("no contracts found for provider to find storage IP via overlay", "provider_pubkey", pk)
-			delete(availableProvidersIPs, pk)
-			continue
-		}
-
-		storageIP, err := w.findStorageIPOverlay(ctx, ip.Provider.IP, providerContracts, log)
-		if err != nil {
-			log.Error("failed to find storage IP via overlay", "provider_pubkey", pk, "error", err)
-			delete(availableProvidersIPs, pk)
-			continue
-		}
-
-		ip.Storage = storageIP
-		availableProvidersIPs[pk] = ip
-	}
-
-	ips := make([]db.ProviderIP, 0, len(availableProvidersIPs))
-	for _, p := range availableProvidersIPs {
-		ips = append(ips, p)
-	}
-
-	err = w.providers.UpdateProvidersIPs(ctx, ips)
-	if err != nil {
-		log.Error("failed to update providers IPs", "error", err)
-		return
-	}
-
-	log.Info("successfully updated providers IPs", "count", len(availableProvidersIPs))
-	return
+	return w.refreshProvidersEndpoints(ctx, storageContracts, false)
 }
 
 func (w *providersMasterWorker) findStorageIPOverlay(ctx context.Context, providerIP string, contracts []db.ContractToProviderRelation, log *slog.Logger) (ip db.IPInfo, err error) {
@@ -1432,12 +1362,23 @@ func NewWorker(
 	masterAddr string,
 	batchSize uint32,
 	timeouts RunChecksTimeouts,
+	endpointCfg EndpointRefreshConfig,
 	logger *slog.Logger,
 ) Worker {
 	_, prv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		logger.Error("failed to generate ed25519 key", "error", err)
 		return nil
+	}
+
+	if endpointCfg.StaleTTL <= 0 {
+		endpointCfg.StaleTTL = defaultEndpointStaleTTL
+	}
+	if endpointCfg.FullRefreshInterval <= 0 {
+		endpointCfg.FullRefreshInterval = defaultEndpointFullRefreshInterval
+	}
+	if endpointCfg.FailInterval <= 0 {
+		endpointCfg.FailInterval = defaultEndpointFullRefreshFailInterval
 	}
 
 	return &providersMasterWorker{
@@ -1452,6 +1393,8 @@ func NewWorker(
 		masterAddr:     masterAddr,
 		batchSize:      batchSize,
 		timeouts:       timeouts,
+		endpointCfg:    endpointCfg,
 		logger:         logger,
+		lastKnownIPs:   make(map[string]db.ProviderIP),
 	}
 }

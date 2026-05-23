@@ -217,6 +217,10 @@ func (r *Repository) GetProvidersIPs(_ context.Context) ([]db.ProviderIP, error)
 	return nil, nil
 }
 
+func (r *Repository) GetProvidersEndpointState(_ context.Context, _ []string) ([]db.ProviderEndpointState, error) {
+	return nil, nil
+}
+
 func (r *Repository) UpdateProvidersIPInfo(_ context.Context, _ []db.ProviderIPInfo) error {
 	return nil
 }

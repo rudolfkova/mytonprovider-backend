@@ -91,6 +91,17 @@ func (m *metricsMiddleware) UpdateIPInfo(ctx context.Context) (interval time.Dur
 	return m.worker.UpdateIPInfo(ctx)
 }
 
+func (m *metricsMiddleware) RefreshEndpointsFull(ctx context.Context) (interval time.Duration, err error) {
+	defer func(s time.Time) {
+		labels := []string{
+			"RefreshEndpointsFull", strconv.FormatBool(err != nil),
+		}
+		m.reqCount.WithLabelValues(labels...).Add(1)
+		m.reqDuration.WithLabelValues(labels...).Observe(time.Since(s).Seconds())
+	}(time.Now())
+	return m.worker.RefreshEndpointsFull(ctx)
+}
+
 func NewMetrics(reqCount *prometheus.CounterVec, reqDuration *prometheus.HistogramVec, worker Worker) Worker {
 	return &metricsMiddleware{
 		reqCount:    reqCount,

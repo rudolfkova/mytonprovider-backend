@@ -37,6 +37,7 @@ type Repository interface {
 	AddProviders(ctx context.Context, providers []db.ProviderCreate) (err error)
 
 	GetProvidersIPs(ctx context.Context) (ips []db.ProviderIP, err error)
+	GetProvidersEndpointState(ctx context.Context, pubkeys []string) (rows []db.ProviderEndpointState, err error)
 	UpdateProvidersIPInfo(ctx context.Context, ips []db.ProviderIPInfo) (err error)
 
 	CleanOldProvidersHistory(ctx context.Context, days int) (removed int, err error)
@@ -462,10 +463,11 @@ func (r *repository) UpdateProvidersIPs(ctx context.Context, ips []db.ProviderIP
 	query := `
 		UPDATE providers.providers p
 		SET
-			ip = j.provider_ip,
-			port = j.provider_port,
-			storage_ip = j.storage_ip,
-			storage_port = j.storage_port
+			ip = COALESCE(NULLIF(j.provider_ip, ''), p.ip),
+			port = COALESCE(NULLIF(j.provider_port, 0), p.port),
+			storage_ip = COALESCE(NULLIF(j.storage_ip, ''), p.storage_ip),
+			storage_port = COALESCE(NULLIF(j.storage_port, 0), p.storage_port),
+			updated_at = NOW()
 		FROM (
 			SELECT
 				lower(s->>'public_key') AS public_key,
@@ -946,6 +948,57 @@ func (r *repository) GetProvidersIPs(ctx context.Context) (ips []db.ProviderIP, 
 	}
 
 	return
+}
+
+func (r *repository) GetProvidersEndpointState(ctx context.Context, pubkeys []string) (rowsOut []db.ProviderEndpointState, err error) {
+	if len(pubkeys) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT
+			p.public_key,
+			p.address,
+			p.updated_at,
+			COALESCE(p.ip, ''),
+			COALESCE(p.port, 0),
+			COALESCE(p.storage_ip, ''),
+			COALESCE(p.storage_port, 0)
+		FROM providers.providers p
+		WHERE lower(p.public_key) = ANY(SELECT lower(x) FROM unnest($1::text[]) AS x)
+	`
+
+	rows, err := r.db.Query(ctx, query, pubkeys)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer rows.Close()
+
+	rowsOut = make([]db.ProviderEndpointState, 0, len(pubkeys))
+	for rows.Next() {
+		var row db.ProviderEndpointState
+		if rErr := rows.Scan(
+			&row.PublicKey,
+			&row.Address,
+			&row.UpdatedAt,
+			&row.ProviderIP,
+			&row.ProviderPort,
+			&row.StorageIP,
+			&row.StoragePort,
+		); rErr != nil {
+			return nil, rErr
+		}
+		rowsOut = append(rowsOut, row)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return rowsOut, nil
 }
 
 func (r *repository) UpdateProvidersIPInfo(ctx context.Context, ips []db.ProviderIPInfo) (err error) {

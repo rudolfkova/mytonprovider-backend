@@ -76,6 +76,10 @@ func (f *fakeProvidersRepo) GetProvidersIPs(context.Context) ([]db.ProviderIP, e
 	return nil, nil
 }
 
+func (f *fakeProvidersRepo) GetProvidersEndpointState(context.Context, []string) ([]db.ProviderEndpointState, error) {
+	return nil, nil
+}
+
 func (f *fakeProvidersRepo) UpdateProvidersIPInfo(context.Context, []db.ProviderIPInfo) error {
 	return nil
 }

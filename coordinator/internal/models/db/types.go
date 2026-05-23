@@ -258,6 +258,16 @@ type ProviderIPInfo struct {
 	IPInfo    string `json:"ip_info"`
 }
 
+type ProviderEndpointState struct {
+	PublicKey    string     `json:"public_key"`
+	Address      string     `json:"address"`
+	UpdatedAt    *time.Time `json:"updated_at"`
+	ProviderIP   string     `json:"provider_ip"`
+	ProviderPort int32      `json:"provider_port"`
+	StorageIP    string     `json:"storage_ip"`
+	StoragePort  int32      `json:"storage_port"`
+}
+
 type ContractProofsCheck struct {
 	ContractAddress string               `json:"contract_address"`
 	ProviderAddress string               `json:"provider_address"`

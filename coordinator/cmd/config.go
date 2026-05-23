@@ -22,6 +22,9 @@ type System struct {
 	Key              ed25519.PrivateKey `env:"SYSTEM_KEY" required:"false"`
 	LogLevel         uint8              `env:"SYSTEM_LOG_LEVEL" envDefault:"1"` // 0 - debug, 1 - info, 2 - warn, 3 - error
 	StoreHistoryDays int                `env:"SYSTEM_STORE_HISTORY_DAYS" envDefault:"90"`
+	EndpointStaleTTLMinutes            int `env:"COORDINATOR_ENDPOINT_STALE_TTL_MINUTES" envDefault:"720"`
+	EndpointFullRefreshIntervalMinutes int `env:"COORDINATOR_ENDPOINT_FULL_REFRESH_INTERVAL_MINUTES" envDefault:"360"`
+	EndpointRefreshFailureSeconds      int `env:"COORDINATOR_ENDPOINT_REFRESH_FAILURE_INTERVAL_SECONDS" envDefault:"30"`
 }
 
 type Metrics struct {
