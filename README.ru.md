@@ -108,6 +108,29 @@ nano coordinator/deploy/.env
 task coordinator:deploy:up
 ```
 
+**Отдельный деплой фронтенда** (когда coordinator уже запущен):
+
+```bash
+# Обязательно:
+# - DOMAIN: домен или IP, где будет отдаваться фронт
+# - PUBLIC_ORIGIN: origin для API-запросов из фронта
+# Опционально:
+# - INSTALL_SSL=true (только для домена), COORDINATOR_PORT=8080
+DOMAIN=<ваш-домен-или-ip> \
+PUBLIC_ORIGIN=https://<ваш-домен> \
+task coordinator:deploy:frontend
+```
+
+Эта task-команда запускает `coordinator/deploy/deploy_frontend.sh`: ставит зависимости, настраивает Nginx, собирает статику фронта и проксирует (`/api`, `/health`, `/metrics`) на coordinator.
+
+Быстрые проверки после деплоя фронта:
+
+```bash
+curl -fsS "http://127.0.0.1:8080/health"
+curl -fsS "http://127.0.0.1:8080/api/v1/providers/filters"
+curl -fsS "http://127.0.0.1/"
+```
+
 **Агент со сборкой на VPS** (только dev / отладка):
 
 ```bash

@@ -465,3 +465,18 @@ tasks:
     desc: Follow logs for coordinator deploy stack
     cmds:
       - docker compose --env-file coordinator/deploy/.env -f coordinator/deploy/docker-compose.yml logs -f
+
+  coordinator:deploy:frontend:
+    desc: Deploy frontend only (deps + nginx + build + static deploy)
+    cmds:
+      - |
+        if [ -z "${DOMAIN:-}" ]; then
+          echo "DOMAIN is required, e.g. DOMAIN=front.example.com"
+          exit 1
+        fi
+      - |
+        if [ -z "${PUBLIC_ORIGIN:-}" ]; then
+          echo "PUBLIC_ORIGIN is required, e.g. PUBLIC_ORIGIN=https://front.example.com"
+          exit 1
+        fi
+      - bash coordinator/deploy/deploy_frontend.sh

@@ -108,6 +108,29 @@ nano coordinator/deploy/.env
 task coordinator:deploy:up
 ```
 
+**Frontend-only deploy** (after coordinator is already running):
+
+```bash
+# Required:
+# - DOMAIN: domain or IP where frontend will be served
+# - PUBLIC_ORIGIN: origin used by frontend API calls
+# Optional:
+# - INSTALL_SSL=true (domain only), COORDINATOR_PORT=8080
+DOMAIN=<your-domain-or-ip> \
+PUBLIC_ORIGIN=https://<your-domain> \
+task coordinator:deploy:frontend
+```
+
+This task runs `coordinator/deploy/deploy_frontend.sh`: it installs dependencies, configures Nginx, builds frontend static files, and sets proxy routes (`/api`, `/health`, `/metrics`) to coordinator.
+
+Quick smoke checks after frontend deploy:
+
+```bash
+curl -fsS "http://127.0.0.1:8080/health"
+curl -fsS "http://127.0.0.1:8080/api/v1/providers/filters"
+curl -fsS "http://127.0.0.1/"
+```
+
 **Agent build on VPS** (dev / debugging only):
 
 ```bash
