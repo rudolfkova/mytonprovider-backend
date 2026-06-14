@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"mytonprovider-agent/internal/metrics"
-	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 )
 
 const (

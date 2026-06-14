@@ -1,7 +1,7 @@
 package providersmaster
 
 import (
-	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 	"mytonprovider-coordinator/internal/constants"
 )
 

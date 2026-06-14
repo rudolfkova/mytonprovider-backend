@@ -1551,7 +1551,7 @@ const file_providerchecks_v1_provider_checks_proto_rawDesc = "" +
 	"\x15ProviderChecksService\x12V\n" +
 	"\tRunChecks\x12#.providerchecks.v1.RunChecksRequest\x1a$.providerchecks.v1.RunChecksResponse\x12h\n" +
 	"\x0fRunStorageRates\x12).providerchecks.v1.RunStorageRatesRequest\x1a*.providerchecks.v1.RunStorageRatesResponse\x12q\n" +
-	"\x12RequestStorageInfo\x12,.providerchecks.v1.RequestStorageInfoRequest\x1a-.providerchecks.v1.RequestStorageInfoResponseBCZAmytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1b\x06proto3"
+	"\x12RequestStorageInfo\x12,.providerchecks.v1.RequestStorageInfoRequest\x1a-.providerchecks.v1.RequestStorageInfoResponseBaZ_github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1;providerchecksv1b\x06proto3"
 
 var (
 	file_providerchecks_v1_provider_checks_proto_rawDescOnce sync.Once

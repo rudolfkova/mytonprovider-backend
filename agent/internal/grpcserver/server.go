@@ -22,7 +22,7 @@ import (
 	"mytonprovider-agent/internal/lokipush"
 	"mytonprovider-agent/internal/metrics"
 	"mytonprovider-agent/internal/tontransport"
-	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 )
 
 // gRPC HTTP/2 keepalive defaults (server → client pings + policy for client pings).

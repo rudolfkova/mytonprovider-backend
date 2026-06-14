@@ -28,7 +28,7 @@ import (
 	"github.com/xssnick/tonutils-go/tvm/cell"
 	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
 
-	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 	"mytonprovider-coordinator/internal/clients/agentrpc"
 	"mytonprovider-coordinator/internal/clients/ifconfig"
 	tonclient "mytonprovider-coordinator/internal/clients/ton"

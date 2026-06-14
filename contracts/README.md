@@ -2,6 +2,8 @@
 
 Shared gRPC/protobuf definitions for mytonprovider agent and clients.
 
+Module path: `github.com/rudolfkova/mytonprovider-backend/contracts`
+
 ## Generate
 
 From repo root:
@@ -15,14 +17,14 @@ task proto:gen
 After proto changes:
 
 ```bash
-git tag contracts/v0.2.0
-git push origin contracts/v0.2.0
+git tag contracts/v0.2.1
+git push origin contracts/v0.2.1
 ```
 
-In `mytonstorage-backend/go.mod` (production, without local replace):
+In `mytonstorage-backend/go.mod` (production):
 
 ```bash
-go get mytonprovider-contracts@contracts/v0.2.0
+go get github.com/rudolfkova/mytonprovider-backend/contracts@contracts/v0.2.1
 ```
 
-Local development uses `replace mytonprovider-contracts => ../mytonprovider-backend/contracts`.
+Local development uses `replace` in `go.mod` pointing to sibling `../mytonprovider-backend/contracts`.
