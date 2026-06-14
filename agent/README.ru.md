@@ -2,9 +2,13 @@
 
 **[English version](README.md)**
 
-Сервис ожидает файлы TLS-сертификата и ключа при старте. Для VPS в интернете используйте свою CA и выпускайте server-сертификаты с IP SAN.
+Сервис ожидает файлы TLS-сертификата и ключа при старте. Используйте свою CA (обычно на **coordinator**) и выпускайте server-сертификаты с **IP SAN**.
 
-## 1) Генерация CA (один раз, офлайн)
+**Важно:** IP в SAN = адрес в `AGENT_ENDPOINTS` coordinator’а. Для связи через **Tailscale** указывайте Tailscale IPv4 (`100.x.x.x`), не обязательно публичный IP VPS.
+
+После копирования на агент: `chmod 644` на `server.key` — см. [agent/deploy/secrets/README.ru.md](deploy/secrets/README.ru.md).
+
+## 1) Генерация CA (один раз, на coordinator)
 
 ```bash
 mkdir -p certs/ca
@@ -16,7 +20,36 @@ openssl req -x509 -new -nodes -key certs/ca/ca.key -sha256 -days 3650 -out certs
 
 ## 2) Server-сертификат для IP агента
 
-Создайте OpenSSL config для каждого агента, замените `203.0.113.10` на реальный публичный IP:
+Создайте OpenSSL config для каждого агента. Замените `203.0.113.10` на IP из `AGENT_ENDPOINTS` (публичный IP или Tailscale):
+
+```bash
+# Пример: выпуск на coordinator для агента DE (Tailscale)
+issue_agent() {
+  local name="$1" ip="$2"
+  mkdir -p "certs/${name}"
+  cat > "certs/${name}/openssl.cnf" <<EOF
+[req]
+distinguished_name = dn
+req_extensions = v3_req
+prompt = no
+[dn]
+CN = ${name}
+[v3_req]
+subjectAltName = @alt_names
+extendedKeyUsage = serverAuth
+keyUsage = digitalSignature,keyEncipherment
+[alt_names]
+IP.1 = ${ip}
+EOF
+  openssl genrsa -out "certs/${name}/server.key" 2048
+  openssl req -new -key "certs/${name}/server.key" -out "certs/${name}/server.csr" -config "certs/${name}/openssl.cnf"
+  openssl x509 -req -in "certs/${name}/server.csr" -CA certs/ca/ca.crt -CAkey certs/ca/ca.key -CAcreateserial \
+    -out "certs/${name}/server.crt" -days 365 -sha256 -extensions v3_req -extfile "certs/${name}/openssl.cnf"
+}
+# issue_agent agent-de 100.98.253.40
+```
+
+Классический вариант с отдельным `.cnf` файлом — замените IP в `[alt_names]`:
 
 ```bash
 cat > certs/agent-eu.cnf <<'EOF'
@@ -70,7 +103,7 @@ AGENT_ADNL_PORT=16167
 # AGENT_METRICS_LISTEN_ADDR=0.0.0.0:9090
 ```
 
-Монтируйте `server.crt` и `server.key` read-only в контейнер.
+Скопируйте на агент в `agent/deploy/secrets/`, затем `chmod 644 server.crt server.key`. Файлы монтируются read-only в `/run/secrets/`.
 
 ## 4) gRPC health (`grpc.health.v1.Health`)
 

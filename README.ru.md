@@ -86,6 +86,8 @@ task agent:test:smoke
 
 ## Docker-деплой (VPS)
 
+**Полный порядок (coordinator → агенты → TLS):** [coordinator/deploy/README.ru.md](coordinator/deploy/README.ru.md) (чеклист в начале), TLS — [agent/README.ru.md](agent/README.ru.md).
+
 | Стек | Документация | Заметка |
 |------|----------------|---------|
 | Agent (+ опционально мониторинг) | [EN](agent/deploy/README.md) · [RU](agent/deploy/README.ru.md) | **VPS: лучше Docker Hub** — сборка образа локально, pull на сервере |
@@ -116,9 +118,10 @@ task coordinator:deploy:up
 # - PUBLIC_ORIGIN: origin для API-запросов из фронта
 # Опционально:
 # - INSTALL_SSL=true (только для домена), COORDINATOR_PORT=8080
-DOMAIN=<ваш-домен-или-ip> \
-PUBLIC_ORIGIN=https://<ваш-домен> \
-task coordinator:deploy:frontend
+# По IP (без SSL):
+DOMAIN=45.129.96.190 PUBLIC_ORIGIN=http://45.129.96.190 INSTALL_SSL=false task coordinator:deploy:frontend
+# По домену:
+DOMAIN=mytonprovider.org PUBLIC_ORIGIN=https://mytonprovider.org INSTALL_SSL=true task coordinator:deploy:frontend
 ```
 
 Эта task-команда запускает `coordinator/deploy/deploy_frontend.sh`: ставит зависимости, настраивает Nginx, собирает статику фронта и проксирует (`/api`, `/health`, `/metrics`) на coordinator.

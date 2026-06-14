@@ -86,6 +86,8 @@ Set `env` in each configuration to match `coordinator/deploy/.env.example` or te
 
 ## Docker deploy (VPS)
 
+**Full order (coordinator → agents → TLS):** [coordinator/deploy/README.md](coordinator/deploy/README.md) (checklist at top), TLS details in [agent/README.md](agent/README.md).
+
 | Stack | Docs | Notes |
 |-------|------|--------|
 | Agent (+ optional monitoring) | [EN](agent/deploy/README.md) · [RU](agent/deploy/README.ru.md) | **VPS: prefer Docker Hub** — build image locally, pull on server |
@@ -116,9 +118,10 @@ task coordinator:deploy:up
 # - PUBLIC_ORIGIN: origin used by frontend API calls
 # Optional:
 # - INSTALL_SSL=true (domain only), COORDINATOR_PORT=8080
-DOMAIN=<your-domain-or-ip> \
-PUBLIC_ORIGIN=https://<your-domain> \
-task coordinator:deploy:frontend
+# By public IP (no SSL):
+DOMAIN=203.0.113.1 PUBLIC_ORIGIN=http://203.0.113.1 INSTALL_SSL=false task coordinator:deploy:frontend
+# By domain:
+DOMAIN=mytonprovider.org PUBLIC_ORIGIN=https://mytonprovider.org INSTALL_SSL=true task coordinator:deploy:frontend
 ```
 
 This task runs `coordinator/deploy/deploy_frontend.sh`: it installs dependencies, configures Nginx, builds frontend static files, and sets proxy routes (`/api`, `/health`, `/metrics`) to coordinator.

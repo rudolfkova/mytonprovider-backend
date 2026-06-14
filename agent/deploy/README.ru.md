@@ -38,9 +38,10 @@ nano agent/deploy/.env.hub
 task agent:hub:up
 ```
 
-Перед `up` положите TLS:
+Перед `up` положите TLS (см. [secrets/README.ru.md](secrets/README.ru.md)):
 - `agent/deploy/secrets/server.crt`
 - `agent/deploy/secrets/server.key`
+- **`chmod 644`** на оба файла после копирования
 
 В `.env.hub`:
 - `AGENT_IMAGE=<docker-user>/mytonprovider-agent:latest`
@@ -72,12 +73,33 @@ UI:
 | `agent:hub:up` / `down` / `ps` / `logs` | Только агент, pull образа |
 | `agent:hub:stack:up` / `down` / `ps` / `logs` | Агент + Prometheus + Grafana + Loki |
 
+### Какой compose-файл
+
+| Файл | Task | Имя контейнера (типично) | Состав |
+|------|------|--------------------------|--------|
+| `docker-compose.hub.yml` | `agent:hub:up` | `agent-1` | только агент |
+| `docker-compose.hub.stack.yml` | `agent:hub:stack:up` | `deploy-agent-1` | агент + Prometheus + Grafana + Loki |
+
+На VPS репозиторий часто лежит в `~/mytonprovider-backend` (не обязательно `/opt/...`). Команды compose запускайте из `agent/deploy/`.
+
+### Подключение к новому coordinator
+
+1. Новые `server.crt` / `server.key` (CA нового coordinator) → `agent/deploy/secrets/`, `chmod 644`.
+2. `AGENT_AUTH_TOKEN` в `.env.hub` = токен из `coordinator/deploy/.env`.
+3. На coordinator: `AGENT_ENDPOINTS=<tailscale-ip-этого-агента>:8443,...`
+4. Перезапуск агента из `agent/deploy/` (см. [secrets/README.ru.md](secrets/README.ru.md)).
+
+Проверка: в логах `agent gRPC server started`, затем `RunChecks completed` (запросы с coordinator).
+
 ### Smoke checks (hub)
 
 ```bash
-task agent:hub:ps
+task agent:hub:stack:ps   # или agent:hub:ps
+docker logs deploy-agent-1 --tail 5   # или agent-1
 grpc_health_probe -addr=127.0.0.1:${AGENT_GRPC_PORT:-8443} -tls -tls-no-verify
 ```
+
+Если `connection refused` на `8443` с coordinator — см. логи агента на `permission denied` для `server.key`.
 
 ---
 

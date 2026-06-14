@@ -21,6 +21,7 @@ services:
       - .env
     ports:
       - "${COORDINATOR_PORT:-8080}:9090"
+      - "${SYSTEM_ADNL_PORT:-16167}:16167/udp"
     volumes:
       - ./secrets:/run/secrets:ro
     depends_on:
