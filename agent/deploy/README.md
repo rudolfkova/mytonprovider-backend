@@ -38,9 +38,10 @@ nano agent/deploy/.env.hub
 task agent:hub:up
 ```
 
-Place TLS files before `up`:
+Place TLS files before `up` (see [secrets/README.md](secrets/README.md)):
 - `agent/deploy/secrets/server.crt`
 - `agent/deploy/secrets/server.key`
+- run **`chmod 644`** on both after copying
 
 In `.env.hub` set:
 - `AGENT_IMAGE=<docker-user>/mytonprovider-agent:latest`
@@ -72,12 +73,31 @@ Stop: `task agent:hub:stack:down` or `task agent:hub:down`.
 | `agent:hub:up` / `down` / `ps` / `logs` | Agent only, pull image |
 | `agent:hub:stack:up` / `down` / `ps` / `logs` | Agent + Prometheus + Grafana + Loki |
 
+### Which compose file
+
+| File | Task | Typical container name | Stack |
+|------|------|------------------------|--------|
+| `docker-compose.hub.yml` | `agent:hub:up` | `agent-1` | agent only |
+| `docker-compose.hub.stack.yml` | `agent:hub:stack:up` | `deploy-agent-1` | agent + monitoring |
+
+Repo path on VPS is often `~/mytonprovider-backend`. Run compose from `agent/deploy/`.
+
+### Connecting to a new coordinator
+
+1. New `server.crt` / `server.key` (new CA) → `agent/deploy/secrets/`, `chmod 644`.
+2. `AGENT_AUTH_TOKEN` in `.env.hub` matches `coordinator/deploy/.env`.
+3. On coordinator: `AGENT_ENDPOINTS` lists this agent’s IP (same as cert SAN).
+4. Recreate agent container — see [secrets/README.md](secrets/README.md).
+
 ### Smoke checks (hub)
 
 ```bash
-task agent:hub:ps
+task agent:hub:stack:ps
+docker logs deploy-agent-1 --tail 5
 grpc_health_probe -addr=127.0.0.1:${AGENT_GRPC_PORT:-8443} -tls -tls-no-verify
 ```
+
+If coordinator gets `connection refused` on `:8443`, check agent logs for `server.key` permission errors.
 
 ---
 

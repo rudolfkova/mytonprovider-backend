@@ -2,10 +2,13 @@
 
 **[Русская версия](README.ru.md)**
 
-This service expects TLS cert and key files at startup. For internet-facing VPS nodes,
-use your own CA and issue per-agent server certificates with IP SAN entries.
+This service expects TLS cert and key files at startup. Use your own CA (usually on the **coordinator** host) and issue per-agent server certificates with matching **IP SAN** entries.
 
-## 1) Generate CA (once, offline machine)
+**Important:** SAN IP must match what the coordinator uses in `AGENT_ENDPOINTS`. For **Tailscale**, use the Tailscale IPv4 (`100.x.x.x`), not necessarily the VPS public IP.
+
+After copying to an agent: `chmod 644` on `server.key` — see [agent/deploy/secrets/README.md](deploy/secrets/README.md).
+
+## 1) Generate CA (once, on coordinator)
 
 ```bash
 mkdir -p certs/ca
@@ -17,7 +20,7 @@ Keep `certs/ca/ca.key` private. Never commit it to git.
 
 ## 2) Issue server cert for agent IP
 
-Create OpenSSL config for each agent, replacing `203.0.113.10` with the real public IP:
+Create OpenSSL config for each agent. Replace `203.0.113.10` with the IP from `AGENT_ENDPOINTS` (public or Tailscale):
 
 ```bash
 cat > certs/agent-eu.cnf <<'EOF'
@@ -71,7 +74,7 @@ AGENT_ADNL_PORT=16167
 # AGENT_METRICS_LISTEN_ADDR=0.0.0.0:9090
 ```
 
-Mount `server.crt` and `server.key` read-only into the container.
+Copy to `agent/deploy/secrets/` on the agent host, then `chmod 644 server.crt server.key`. Files are mounted read-only at `/run/secrets/`.
 
 ## 4) gRPC health (`grpc.health.v1.Health`)
 

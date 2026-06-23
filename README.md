@@ -86,10 +86,12 @@ Set `env` in each configuration to match `coordinator/deploy/.env.example` or te
 
 ## Docker deploy (VPS)
 
+**Full order (coordinator → agents → TLS):** [coordinator/deploy/README.md](coordinator/deploy/README.md) (checklist at top), TLS details in [agent/README.md](agent/README.md).
+
 | Stack | Docs | Notes |
 |-------|------|--------|
 | Agent (+ optional monitoring) | [EN](agent/deploy/README.md) · [RU](agent/deploy/README.ru.md) | **VPS: prefer Docker Hub** — build image locally, pull on server |
-| Coordinator (+ Postgres + monitoring) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | Builds coordinator image **on VPS** (`deploy:up`) |
+| Coordinator (+ Postgres + monitoring) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | **VPS: prefer Docker Hub** — build image locally, pull on server |
 
 **Agent on VPS (recommended):** build and push on your machine, then hub deploy — see [agent/deploy/README.md](agent/deploy/README.md#production--vps-docker-hub--recommended).
 
@@ -100,12 +102,45 @@ AGENT_IMAGE=<user>/mytonprovider-agent:latest task agent:image:build:push
 task agent:hub:init && nano agent/deploy/.env.hub && task agent:hub:stack:up
 ```
 
-**Coordinator quick start** (build on VPS):
+**Coordinator quick start** (build on VPS, dev/debugging):
 
 ```bash
 task coordinator:deploy:init
 nano coordinator/deploy/.env
 task coordinator:deploy:up
+```
+
+**Coordinator on VPS (recommended):** build and push on your machine, then hub:
+
+```bash
+# Dev machine
+COORDINATOR_IMAGE=<user>/mytonprovider-coordinator:latest task coordinator:image:build:push
+# VPS
+task coordinator:hub:init && nano coordinator/deploy/.env.hub && task coordinator:hub:up
+```
+
+**Frontend-only deploy** (after coordinator is already running):
+
+```bash
+# Required:
+# - DOMAIN: domain or IP where frontend will be served
+# - PUBLIC_ORIGIN: origin used by frontend API calls
+# Optional:
+# - INSTALL_SSL=true (domain only), COORDINATOR_PORT=8080
+# By public IP (no SSL):
+DOMAIN=203.0.113.1 PUBLIC_ORIGIN=http://203.0.113.1 INSTALL_SSL=false task coordinator:deploy:frontend
+# By domain:
+DOMAIN=mytonprovider.org PUBLIC_ORIGIN=https://mytonprovider.org INSTALL_SSL=true task coordinator:deploy:frontend
+```
+
+This task runs `coordinator/deploy/deploy_frontend.sh`: it installs dependencies, configures Nginx, builds frontend static files, and sets proxy routes (`/api`, `/health`, `/metrics`) to coordinator.
+
+Quick smoke checks after frontend deploy:
+
+```bash
+curl -fsS "http://127.0.0.1:8080/health"
+curl -fsS "http://127.0.0.1:8080/api/v1/providers/filters"
+curl -fsS "http://127.0.0.1/"
 ```
 
 **Agent build on VPS** (dev / debugging only):

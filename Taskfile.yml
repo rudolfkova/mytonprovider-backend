@@ -465,3 +465,85 @@ tasks:
     desc: Follow logs for coordinator deploy stack
     cmds:
       - docker compose --env-file coordinator/deploy/.env -f coordinator/deploy/docker-compose.yml logs -f
+
+  coordinator:deploy:frontend:
+    desc: Deploy frontend only (deps + nginx + build + static deploy)
+    cmds:
+      - |
+        if [ -z "${DOMAIN:-}" ]; then
+          echo "DOMAIN is required, e.g. DOMAIN=front.example.com"
+          exit 1
+        fi
+      - |
+        if [ -z "${PUBLIC_ORIGIN:-}" ]; then
+          echo "PUBLIC_ORIGIN is required, e.g. PUBLIC_ORIGIN=https://front.example.com"
+          exit 1
+        fi
+      - bash coordinator/deploy/deploy_frontend.sh
+
+  coordinator:hub:init:
+    desc: Prepare coordinator Docker Hub deploy env and secrets placeholders
+    cmds:
+      - mkdir -p coordinator/deploy/secrets
+      - |
+        if [ ! -f coordinator/deploy/.env.hub ]; then
+          cp coordinator/deploy/.env.hub.example coordinator/deploy/.env.hub
+          echo "Created coordinator/deploy/.env.hub from .env.hub.example"
+        else
+          echo "coordinator/deploy/.env.hub already exists"
+        fi
+      - |
+        if [ ! -f coordinator/deploy/secrets/agents-ca.crt ]; then
+          echo "Place CA cert into coordinator/deploy/secrets/agents-ca.crt"
+        fi
+      - |
+        if [ ! -f coordinator/deploy/secrets/metrics.token ]; then
+          printf '%s\n' "metrics-token" > coordinator/deploy/secrets/metrics.token
+          echo "Created placeholder coordinator/deploy/secrets/metrics.token"
+        fi
+
+  coordinator:hub:up:
+    desc: Pull and start coordinator deploy stack from Docker Hub image (no local build)
+    cmds:
+      - docker compose --env-file coordinator/deploy/.env.hub -f coordinator/deploy/docker-compose.hub.yml up -d
+
+  coordinator:hub:down:
+    desc: Stop Docker Hub coordinator deploy stack
+    cmds:
+      - docker compose --env-file coordinator/deploy/.env.hub -f coordinator/deploy/docker-compose.hub.yml down
+
+  coordinator:hub:ps:
+    desc: Show Docker Hub coordinator deploy stack containers
+    cmds:
+      - docker compose --env-file coordinator/deploy/.env.hub -f coordinator/deploy/docker-compose.hub.yml ps
+
+  coordinator:hub:logs:
+    desc: Follow logs for Docker Hub coordinator deploy stack
+    cmds:
+      - docker compose --env-file coordinator/deploy/.env.hub -f coordinator/deploy/docker-compose.hub.yml logs -f
+
+  coordinator:image:build:
+    desc: Build coordinator image locally (set COORDINATOR_IMAGE)
+    cmds:
+      - |
+        if [ -z "${COORDINATOR_IMAGE:-}" ]; then
+          echo "COORDINATOR_IMAGE is required, e.g. COORDINATOR_IMAGE=user/mytonprovider-coordinator:latest task coordinator:image:build"
+          exit 1
+        fi
+      - docker build -f coordinator/Dockerfile -t "${COORDINATOR_IMAGE}" .
+
+  coordinator:image:push:
+    desc: Push prebuilt coordinator image (set COORDINATOR_IMAGE)
+    cmds:
+      - |
+        if [ -z "${COORDINATOR_IMAGE:-}" ]; then
+          echo "COORDINATOR_IMAGE is required, e.g. COORDINATOR_IMAGE=user/mytonprovider-coordinator:latest task coordinator:image:push"
+          exit 1
+        fi
+      - docker push "${COORDINATOR_IMAGE}"
+
+  coordinator:image:build:push:
+    desc: Build and push coordinator image (set COORDINATOR_IMAGE)
+    deps:
+      - coordinator:image:build
+      - coordinator:image:push

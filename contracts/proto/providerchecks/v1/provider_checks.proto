@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package providerchecks.v1;
 
-option go_package = "mytonprovider-contracts/gen/go/providerchecks/v1;providerchecksv1";
+option go_package = "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1;providerchecksv1";
 
 // ProviderChecksService runs network-dependent provider BAG checks
 // from a single agent location. Coordinator performs 1-of-3 aggregation.
@@ -11,6 +11,8 @@ service ProviderChecksService {
   // RunStorageRates queries storage rates (GetStorageRates) per provider pubkey from this agent.
   // Coordinator owns batching, schedule, and 1-of-3 aggregation. Agents enforce a max batch size.
   rpc RunStorageRates(RunStorageRatesRequest) returns (RunStorageRatesResponse);
+  // RequestStorageInfo notifies providers to fetch a storage contract (mytonstorage-backend notify path).
+  rpc RequestStorageInfo(RequestStorageInfoRequest) returns (RequestStorageInfoResponse);
 }
 
 message RunChecksRequest {
@@ -80,6 +82,45 @@ message RunStorageRatesResponse {
   int64 started_at_unix = 4;
   int64 finished_at_unix = 5;
   repeated StorageRatesResult results = 6;
+  repeated ErrorDetail warnings = 7;
+}
+
+message StorageInfoQuery {
+  string provider_pubkey = 1;
+  string contract_address = 2;
+  uint64 byte_to_proof = 3;
+}
+
+message StorageInfoTimeouts {
+  uint32 query_timeout_ms = 1;
+  uint32 total_ms = 2;
+}
+
+message RequestStorageInfoRequest {
+  string job_id = 1;
+  repeated StorageInfoQuery queries = 2;
+  StorageInfoTimeouts timeouts = 3;
+}
+
+message StorageInfoResult {
+  string provider_pubkey = 1;
+  string contract_address = 2;
+  bool ok = 3;
+  string status = 4;
+  string reason = 5;
+  uint64 downloaded = 6;
+  bytes proof = 7;
+  uint32 latency_ms = 8;
+  string details = 9;
+}
+
+message RequestStorageInfoResponse {
+  string job_id = 1;
+  string agent_id = 2;
+  string location = 3;
+  int64 started_at_unix = 4;
+  int64 finished_at_unix = 5;
+  repeated StorageInfoResult results = 6;
   repeated ErrorDetail warnings = 7;
 }
 

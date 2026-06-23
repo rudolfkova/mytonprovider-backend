@@ -86,10 +86,12 @@ task agent:test:smoke
 
 ## Docker-деплой (VPS)
 
+**Полный порядок (coordinator → агенты → TLS):** [coordinator/deploy/README.ru.md](coordinator/deploy/README.ru.md) (чеклист в начале), TLS — [agent/README.ru.md](agent/README.ru.md).
+
 | Стек | Документация | Заметка |
 |------|----------------|---------|
 | Agent (+ опционально мониторинг) | [EN](agent/deploy/README.md) · [RU](agent/deploy/README.ru.md) | **VPS: лучше Docker Hub** — сборка образа локально, pull на сервере |
-| Coordinator (+ Postgres + мониторинг) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | Образ coordinator **собирается на VPS** (`deploy:up`) |
+| Coordinator (+ Postgres + мониторинг) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | **VPS: лучше Docker Hub** — сборка образа локально, pull на сервере |
 
 **Агент на VPS (рекомендуется):** сборка и push на dev-машине, затем hub — см. [agent/deploy/README.ru.md](agent/deploy/README.ru.md).
 
@@ -100,12 +102,45 @@ AGENT_IMAGE=<user>/mytonprovider-agent:latest task agent:image:build:push
 task agent:hub:init && nano agent/deploy/.env.hub && task agent:hub:stack:up
 ```
 
-**Coordinator — быстрый старт** (сборка на VPS):
+**Coordinator — быстрый старт** (сборка на VPS, dev/отладка):
 
 ```bash
 task coordinator:deploy:init
 nano coordinator/deploy/.env
 task coordinator:deploy:up
+```
+
+**Coordinator на VPS (рекомендуется):** сборка и push на dev-машине, затем hub:
+
+```bash
+# Dev-машина
+COORDINATOR_IMAGE=<user>/mytonprovider-coordinator:latest task coordinator:image:build:push
+# VPS
+task coordinator:hub:init && nano coordinator/deploy/.env.hub && task coordinator:hub:up
+```
+
+**Отдельный деплой фронтенда** (когда coordinator уже запущен):
+
+```bash
+# Обязательно:
+# - DOMAIN: домен или IP, где будет отдаваться фронт
+# - PUBLIC_ORIGIN: origin для API-запросов из фронта
+# Опционально:
+# - INSTALL_SSL=true (только для домена), COORDINATOR_PORT=8080
+# По IP (без SSL):
+DOMAIN=45.129.96.190 PUBLIC_ORIGIN=http://45.129.96.190 INSTALL_SSL=false task coordinator:deploy:frontend
+# По домену:
+DOMAIN=mytonprovider.org PUBLIC_ORIGIN=https://mytonprovider.org INSTALL_SSL=true task coordinator:deploy:frontend
+```
+
+Эта task-команда запускает `coordinator/deploy/deploy_frontend.sh`: ставит зависимости, настраивает Nginx, собирает статику фронта и проксирует (`/api`, `/health`, `/metrics`) на coordinator.
+
+Быстрые проверки после деплоя фронта:
+
+```bash
+curl -fsS "http://127.0.0.1:8080/health"
+curl -fsS "http://127.0.0.1:8080/api/v1/providers/filters"
+curl -fsS "http://127.0.0.1/"
 ```
 
 **Агент со сборкой на VPS** (только dev / отладка):

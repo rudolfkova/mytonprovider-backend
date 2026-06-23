@@ -13,12 +13,11 @@ services:
       - ../db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
 
   coordinator:
-    build:
-      context: ../..
-      dockerfile: coordinator/Dockerfile
+    image: ${COORDINATOR_IMAGE}
+    pull_policy: always
     restart: unless-stopped
     env_file:
-      - .env
+      - .env.hub
     ports:
       - "${COORDINATOR_PORT:-8080}:9090"
       - "${SYSTEM_ADNL_PORT:-16167}:16167/udp"

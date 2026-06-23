@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 )
 
 var (
@@ -77,6 +77,26 @@ var (
 			Buckets: []float64{.05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60, 120, 300},
 		},
 	)
+	requestStorageInfoRows = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agent_requeststorageinfo_rows_total",
+			Help: "RequestStorageInfo per-row outcomes",
+		},
+		[]string{"ok"},
+	)
+	requestStorageInfoJobsCompleted = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "agent_requeststorageinfo_jobs_completed_total",
+			Help: "RequestStorageInfo RPCs finished (gRPC OK), one increment per response",
+		},
+	)
+	requestStorageInfoJobDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "agent_requeststorageinfo_job_duration_seconds",
+			Help:    "Wall time of one RequestStorageInfo RPC (handler)",
+			Buckets: []float64{.05, .1, .25, .5, 1, 2.5, 5, 10, 30, 60, 120, 300},
+		},
+	)
 )
 
 func init() {
@@ -84,6 +104,7 @@ func init() {
 		grpc_health_v1.Health_Check_FullMethodName,
 		providerchecksv1.ProviderChecksService_RunChecks_FullMethodName,
 		providerchecksv1.ProviderChecksService_RunStorageRates_FullMethodName,
+		providerchecksv1.ProviderChecksService_RequestStorageInfo_FullMethodName,
 	}
 	codeNames := []string{
 		codes.OK.String(),
@@ -107,6 +128,8 @@ func init() {
 	}
 	runStorageRatesRows.WithLabelValues("true").Add(0)
 	runStorageRatesRows.WithLabelValues("false").Add(0)
+	requestStorageInfoRows.WithLabelValues("true").Add(0)
+	requestStorageInfoRows.WithLabelValues("false").Add(0)
 }
 
 // UnaryServerInterceptor records request count and duration (outer interceptor: includes auth failures).
@@ -161,4 +184,19 @@ func ObserveRunChecksJob(duration time.Duration, contractResults int) {
 func ObserveRunStorageRatesJob(duration time.Duration) {
 	runStorageRatesJobsCompleted.Inc()
 	runStorageRatesJobDuration.Observe(duration.Seconds())
+}
+
+// IncRequestStorageInfoRow increments per-row ok/fail.
+func IncRequestStorageInfoRow(ok bool) {
+	s := "false"
+	if ok {
+		s = "true"
+	}
+	requestStorageInfoRows.WithLabelValues(s).Inc()
+}
+
+// ObserveRequestStorageInfoJob records one finished RequestStorageInfo RPC.
+func ObserveRequestStorageInfoJob(duration time.Duration) {
+	requestStorageInfoJobsCompleted.Inc()
+	requestStorageInfoJobDuration.Observe(duration.Seconds())
 }

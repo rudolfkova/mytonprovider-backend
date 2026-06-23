@@ -178,6 +178,11 @@ func run() (err error) {
 			TotalMs:             config.Agents.RunChecksTotalMs,
 			StorageRatesQueryMs: config.Agents.StorageRatesQueryMs,
 		},
+		providersmaster.EndpointRefreshConfig{
+			StaleTTL:            time.Duration(config.System.EndpointStaleTTLMinutes) * time.Minute,
+			FullRefreshInterval: time.Duration(config.System.EndpointFullRefreshIntervalMinutes) * time.Minute,
+			FailInterval:        time.Duration(config.System.EndpointRefreshFailureSeconds) * time.Second,
+		},
 		logger,
 	)
 	providersMasterWorker = providersmaster.NewMetrics(workersRunCount, workersRunDuration, providersMasterWorker)

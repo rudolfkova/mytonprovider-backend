@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 const (
 	getProvidersRetries = 5
+	getProvidersFallbackMasterchainRefreshAttempts = 3
 	retries             = 20
 	parrallelRequests   = 30
 	batch               = 100
@@ -192,6 +194,43 @@ func (c *client) GetProvidersInfo(ctx context.Context, addrs []string) (contract
 				info, coins, cErr = pContract.GetProvidersV1(ctx, api, block, addr)
 				return cErr
 			}, getProvidersRetries)
+			if callErr != nil && isLiteServerHistoryUnavailableErr(callErr) {
+				log.Info(
+					"retrying get_providers with refreshed masterchain block due to lite-server historical-state error",
+					"address", addrStr,
+					"error", callErr.Error(),
+				)
+				for attempt := 1; attempt <= getProvidersFallbackMasterchainRefreshAttempts; attempt++ {
+					fallbackBlock, blockErr := api.GetMasterchainInfo(ctx)
+					if blockErr != nil {
+						callErr = fmt.Errorf("refresh masterchain info for fallback: %w", blockErr)
+						if !isLiteServerHistoryUnavailableErr(callErr) {
+							break
+						}
+						continue
+					}
+
+					retryErr := utils.TryNTimes(func() error {
+						var cErr error
+						info, coins, cErr = pContract.GetProvidersV1(ctx, api, fallbackBlock, addr)
+						return cErr
+					}, getProvidersRetries)
+					if retryErr == nil {
+						callErr = nil
+						log.Info(
+							"fallback succeeded with refreshed masterchain block",
+							"address", addrStr,
+							"attempt", attempt,
+						)
+						break
+					}
+
+					callErr = retryErr
+					if !isLiteServerHistoryUnavailableErr(retryErr) {
+						break
+					}
+				}
+			}
 			if callErr != nil {
 				log.Error("get providers info", slog.String("address", addrStr), slog.String("error", callErr.Error()))
 			}
@@ -220,6 +259,17 @@ func (c *client) GetProvidersInfo(ctx context.Context, addrs []string) (contract
 	wg.Wait()
 
 	return
+}
+
+func isLiteServerHistoryUnavailableErr(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "state already gc'd") ||
+		strings.Contains(msg, "cannot load state") ||
+		strings.Contains(msg, "failed to get account state")
 }
 
 func parseTx(tx *tlb.Transaction) (res *Transaction, ok bool) {

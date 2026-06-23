@@ -1,6 +1,6 @@
 package reason
 
-import providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+import providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 
 type Code uint32
 

@@ -3,7 +3,7 @@ package providersmaster
 import (
 	"testing"
 
-	providerchecksv1 "mytonprovider-contracts/gen/go/providerchecks/v1"
+	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 	"mytonprovider-coordinator/internal/clients/agentrpc"
 	"mytonprovider-coordinator/internal/constants"
 	"mytonprovider-coordinator/internal/models/db"

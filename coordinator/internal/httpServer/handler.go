@@ -2,7 +2,10 @@ package httpServer
 
 import (
 	"context"
+	"crypto/md5"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -41,7 +44,12 @@ func New(
 ) *handler {
 	accessTokensMap := make(map[string]struct{})
 	for _, token := range accessTokens {
-		accessTokensMap[token] = struct{}{}
+		token = strings.TrimSpace(token)
+		if token == "" {
+			continue
+		}
+		sum := md5.Sum([]byte(token))
+		accessTokensMap[fmt.Sprintf("%x", sum[:])] = struct{}{}
 	}
 
 	h := &handler{
