@@ -22,11 +22,42 @@ This stack runs:
 
 ## Disk usage on VPS
 
-`task coordinator:deploy:up` runs **`docker compose ... --build`**: the coordinator image is **compiled on the VPS**. Expect extra disk for the Go builder image and build cache — heavier than the agent **Docker Hub** flow.
+`task coordinator:deploy:up` runs **`docker compose ... --build`**: the coordinator image is **compiled on the VPS**. Expect extra disk for the Go builder image and build cache — heavier than the **Docker Hub** flow.
 
-For **agents** on other VPS nodes: [agent/deploy/README.md](../../agent/deploy/README.md).
+**Recommended for VPS:** pull a prebuilt image — see [Docker Hub](#docker-hub-recommended-for-vps) below.
 
-**Advanced:** build and push the coordinator image on a dev machine, then on the VPS use `image:` instead of `build:` in compose.
+## Docker Hub (recommended for VPS)
+
+Build on a dev machine, on the VPS only `pull` + `compose up` — no `golang:bookworm` compile on the server.
+
+| Step | Where | Command |
+|------|-------|---------|
+| 1 | Dev machine | `COORDINATOR_IMAGE=<user>/mytonprovider-coordinator:<tag> task coordinator:image:build:push` |
+| 2 | VPS | Clone repo, `coordinator/deploy/` + secrets |
+| 3 | VPS | `task coordinator:hub:init` → edit `coordinator/deploy/.env.hub` |
+| 4 | VPS | `task coordinator:hub:up` |
+
+Hub compose ([docker-compose.hub.yml](docker-compose.hub.yml)) uses `image: ${COORDINATOR_IMAGE}` with `pull_policy: always`.
+
+### Dev machine: build + push
+
+```bash
+COORDINATOR_IMAGE=<docker-user>/mytonprovider-coordinator:latest task coordinator:image:build:push
+```
+
+### VPS: pull + up
+
+```bash
+task coordinator:hub:init
+nano coordinator/deploy/.env.hub
+task coordinator:hub:up
+```
+
+Set `COORDINATOR_IMAGE` in `.env.hub`; other vars match [`.env.example`](.env.example).
+
+Stop: `task coordinator:hub:down`.
+
+Frontend deploy is unchanged — [Frontend](#frontend-nginx).
 
 ## 1) Prepare
 

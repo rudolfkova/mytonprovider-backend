@@ -91,7 +91,7 @@ task agent:test:smoke
 | Стек | Документация | Заметка |
 |------|----------------|---------|
 | Agent (+ опционально мониторинг) | [EN](agent/deploy/README.md) · [RU](agent/deploy/README.ru.md) | **VPS: лучше Docker Hub** — сборка образа локально, pull на сервере |
-| Coordinator (+ Postgres + мониторинг) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | Образ coordinator **собирается на VPS** (`deploy:up`) |
+| Coordinator (+ Postgres + мониторинг) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | **VPS: лучше Docker Hub** — сборка образа локально, pull на сервере |
 
 **Агент на VPS (рекомендуется):** сборка и push на dev-машине, затем hub — см. [agent/deploy/README.ru.md](agent/deploy/README.ru.md).
 
@@ -102,12 +102,21 @@ AGENT_IMAGE=<user>/mytonprovider-agent:latest task agent:image:build:push
 task agent:hub:init && nano agent/deploy/.env.hub && task agent:hub:stack:up
 ```
 
-**Coordinator — быстрый старт** (сборка на VPS):
+**Coordinator — быстрый старт** (сборка на VPS, dev/отладка):
 
 ```bash
 task coordinator:deploy:init
 nano coordinator/deploy/.env
 task coordinator:deploy:up
+```
+
+**Coordinator на VPS (рекомендуется):** сборка и push на dev-машине, затем hub:
+
+```bash
+# Dev-машина
+COORDINATOR_IMAGE=<user>/mytonprovider-coordinator:latest task coordinator:image:build:push
+# VPS
+task coordinator:hub:init && nano coordinator/deploy/.env.hub && task coordinator:hub:up
 ```
 
 **Отдельный деплой фронтенда** (когда coordinator уже запущен):

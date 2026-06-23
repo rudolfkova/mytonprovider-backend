@@ -22,16 +22,59 @@
 
 ## Место на диске (VPS)
 
-`task coordinator:deploy:up` запускает **`docker compose ... --build`**: образ coordinator **собирается на VPS** (см. `build:` у сервиса `coordinator` в [docker-compose.yml](docker-compose.yml)). Ожидайте расход диска на образ Go builder и кэш сборки — это тяжелее, чем hub-режим **агента**.
+`task coordinator:deploy:up` запускает **`docker compose ... --build`**: образ coordinator **собирается на VPS** (см. `build:` у сервиса `coordinator` в [docker-compose.yml](docker-compose.yml)). Ожидайте расход диска на образ Go builder и кэш сборки — это тяжелее, чем hub-режим.
 
-Для **агентов** на других VPS: [agent/deploy/README.ru.md](../../agent/deploy/README.ru.md) (образ из Docker Hub, без сборки на VPS агента).
+**Рекомендуется для VPS:** образ из Docker Hub — см. [§ Docker Hub](#docker-hub-рекомендуется-для-vps) ниже.
 
-**Продвинутый вариант:** соберите и запушьте образ coordinator на dev-машине, на VPS в compose замените `build:` на `image:`:
+## Docker Hub (рекомендуется для VPS)
+
+Сборка на dev-машине, на VPS только `pull` + `compose up` — без `golang:bookworm` и компиляции на сервере.
+
+| Шаг | Где | Команда |
+|-----|-----|---------|
+| 1 | Dev-машина | `COORDINATOR_IMAGE=<user>/mytonprovider-coordinator:<tag> task coordinator:image:build:push` |
+| 2 | VPS | Клон репо, `coordinator/deploy/` + secrets |
+| 3 | VPS | `task coordinator:hub:init` → правка `coordinator/deploy/.env.hub` |
+| 4 | VPS | `task coordinator:hub:up` |
+
+**Зачем:** `task coordinator:deploy:up` делает `docker compose ... --build`. Hub compose ([docker-compose.hub.yml](docker-compose.hub.yml)) использует `image: ${COORDINATOR_IMAGE}` и `pull_policy: always`.
+
+### Dev-машина: build + push
 
 ```bash
-docker build -f coordinator/Dockerfile -t <user>/mytonprovider-coordinator:latest .
-docker push <user>/mytonprovider-coordinator:latest
+COORDINATOR_IMAGE=<docker-user>/mytonprovider-coordinator:latest task coordinator:image:build:push
 ```
+
+По отдельности: `task coordinator:image:build`, `task coordinator:image:push` (нужен `COORDINATOR_IMAGE`).
+
+### VPS: pull + up
+
+```bash
+task coordinator:hub:init
+nano coordinator/deploy/.env.hub
+task coordinator:hub:up
+task coordinator:hub:ps
+```
+
+В `.env.hub`:
+- `COORDINATOR_IMAGE=<docker-user>/mytonprovider-coordinator:latest`
+- остальное — как в [`.env.example`](.env.example) (`DB_*`, `AGENT_*`, порты)
+
+Секреты: `secrets/agents-ca.crt`, `secrets/metrics.token` — как для обычного деплоя.
+
+Остановка: `task coordinator:hub:down`.
+
+### Задачи Task (hub)
+
+| Task | Описание |
+|------|----------|
+| `coordinator:image:build` | Сборка образа локально (`COORDINATOR_IMAGE`) |
+| `coordinator:image:push` | Push образа |
+| `coordinator:image:build:push` | Сборка + push |
+| `coordinator:hub:init` | Создать `.env.hub` из example |
+| `coordinator:hub:up` / `down` / `ps` / `logs` | Стек из образа Hub |
+
+Фронтенд — по-прежнему [§ Фронт](#фронт-nginx) (`task coordinator:deploy:frontend` или ручной nginx).
 
 ## 1) Подготовка
 

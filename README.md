@@ -91,7 +91,7 @@ Set `env` in each configuration to match `coordinator/deploy/.env.example` or te
 | Stack | Docs | Notes |
 |-------|------|--------|
 | Agent (+ optional monitoring) | [EN](agent/deploy/README.md) · [RU](agent/deploy/README.ru.md) | **VPS: prefer Docker Hub** — build image locally, pull on server |
-| Coordinator (+ Postgres + monitoring) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | Builds coordinator image **on VPS** (`deploy:up`) |
+| Coordinator (+ Postgres + monitoring) | [EN](coordinator/deploy/README.md) · [RU](coordinator/deploy/README.ru.md) | **VPS: prefer Docker Hub** — build image locally, pull on server |
 
 **Agent on VPS (recommended):** build and push on your machine, then hub deploy — see [agent/deploy/README.md](agent/deploy/README.md#production--vps-docker-hub--recommended).
 
@@ -102,12 +102,21 @@ AGENT_IMAGE=<user>/mytonprovider-agent:latest task agent:image:build:push
 task agent:hub:init && nano agent/deploy/.env.hub && task agent:hub:stack:up
 ```
 
-**Coordinator quick start** (build on VPS):
+**Coordinator quick start** (build on VPS, dev/debugging):
 
 ```bash
 task coordinator:deploy:init
 nano coordinator/deploy/.env
 task coordinator:deploy:up
+```
+
+**Coordinator on VPS (recommended):** build and push on your machine, then hub:
+
+```bash
+# Dev machine
+COORDINATOR_IMAGE=<user>/mytonprovider-coordinator:latest task coordinator:image:build:push
+# VPS
+task coordinator:hub:init && nano coordinator/deploy/.env.hub && task coordinator:hub:up
 ```
 
 **Frontend-only deploy** (after coordinator is already running):
