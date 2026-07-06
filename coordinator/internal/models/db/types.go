@@ -229,6 +229,36 @@ type ContractToProviderRelation struct {
 	Address           string `json:"address"`
 	BagID             string `json:"bag_id"`
 	Size              uint64 `json:"size"`
+	Reason            *int   `json:"reason,omitempty"`
+}
+
+type PipelineEventStatus string
+
+const (
+	PipelineEventError PipelineEventStatus = "error"
+	PipelineEventOK    PipelineEventStatus = "ok"
+)
+
+type ProviderPipelineEvent struct {
+	ProviderPubkey string              `json:"provider_pubkey"`
+	Status         PipelineEventStatus `json:"status"`
+	Stage          string              `json:"stage"`
+	ReasonCode     *int                `json:"reason_code,omitempty"`
+	ErrorMessage   *string             `json:"error_message,omitempty"`
+	RunID          string              `json:"run_id"`
+	Worker         string              `json:"worker"`
+}
+
+type BagPipelineEvent struct {
+	ProviderPubkey  string              `json:"provider_pubkey"`
+	ContractAddress string              `json:"contract_address"`
+	BagID           string              `json:"bag_id"`
+	Status          PipelineEventStatus `json:"status"`
+	Stage           string              `json:"stage"`
+	ReasonCode      *int                `json:"reason_code,omitempty"`
+	ErrorMessage    *string             `json:"error_message,omitempty"`
+	RunID           string              `json:"run_id"`
+	Worker          string              `json:"worker"`
 }
 
 type StorageContract struct {

@@ -314,6 +314,61 @@ func (m *metricsMiddleware) CleanOldTelemetryHistory(ctx context.Context, days i
 	return m.repo.CleanOldTelemetryHistory(ctx, days)
 }
 
+func (m *metricsMiddleware) CleanOldProviderPipelineEvents(ctx context.Context, days int) (removed int, err error) {
+	defer func(s time.Time) {
+		labels := []string{
+			"CleanOldProviderPipelineEvents", strconv.FormatBool(err != nil),
+		}
+		m.reqCount.WithLabelValues(labels...).Add(1)
+		m.reqDuration.WithLabelValues(labels...).Observe(time.Since(s).Seconds())
+	}(time.Now())
+	return m.repo.CleanOldProviderPipelineEvents(ctx, days)
+}
+
+func (m *metricsMiddleware) CleanOldBagPipelineEvents(ctx context.Context, days int) (removed int, err error) {
+	defer func(s time.Time) {
+		labels := []string{
+			"CleanOldBagPipelineEvents", strconv.FormatBool(err != nil),
+		}
+		m.reqCount.WithLabelValues(labels...).Add(1)
+		m.reqDuration.WithLabelValues(labels...).Observe(time.Since(s).Seconds())
+	}(time.Now())
+	return m.repo.CleanOldBagPipelineEvents(ctx, days)
+}
+
+func (m *metricsMiddleware) InsertProviderPipelineEvents(ctx context.Context, events []db.ProviderPipelineEvent) (err error) {
+	defer func(s time.Time) {
+		labels := []string{
+			"InsertProviderPipelineEvents", strconv.FormatBool(err != nil),
+		}
+		m.reqCount.WithLabelValues(labels...).Add(1)
+		m.reqDuration.WithLabelValues(labels...).Observe(time.Since(s).Seconds())
+	}(time.Now())
+	return m.repo.InsertProviderPipelineEvents(ctx, events)
+}
+
+func (m *metricsMiddleware) InsertBagPipelineEvents(ctx context.Context, events []db.BagPipelineEvent) (err error) {
+	defer func(s time.Time) {
+		labels := []string{
+			"InsertBagPipelineEvents", strconv.FormatBool(err != nil),
+		}
+		m.reqCount.WithLabelValues(labels...).Add(1)
+		m.reqDuration.WithLabelValues(labels...).Observe(time.Since(s).Seconds())
+	}(time.Now())
+	return m.repo.InsertBagPipelineEvents(ctx, events)
+}
+
+func (m *metricsMiddleware) GetLastProviderPipelineEventStatus(ctx context.Context, pubkeys []string) (statusByPubkey map[string]db.PipelineEventStatus, err error) {
+	defer func(s time.Time) {
+		labels := []string{
+			"GetLastProviderPipelineEventStatus", strconv.FormatBool(err != nil),
+		}
+		m.reqCount.WithLabelValues(labels...).Add(1)
+		m.reqDuration.WithLabelValues(labels...).Observe(time.Since(s).Seconds())
+	}(time.Now())
+	return m.repo.GetLastProviderPipelineEventStatus(ctx, pubkeys)
+}
+
 func NewMetrics(reqCount *prometheus.CounterVec, reqDuration *prometheus.HistogramVec, repo Repository) Repository {
 	return &metricsMiddleware{
 		reqCount:    reqCount,

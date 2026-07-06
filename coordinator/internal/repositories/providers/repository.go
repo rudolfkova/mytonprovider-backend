@@ -44,6 +44,12 @@ type Repository interface {
 	CleanOldStatusesHistory(ctx context.Context, days int) (removed int, err error)
 	CleanOldBenchmarksHistory(ctx context.Context, days int) (removed int, err error)
 	CleanOldTelemetryHistory(ctx context.Context, days int) (removed int, err error)
+	CleanOldProviderPipelineEvents(ctx context.Context, days int) (removed int, err error)
+	CleanOldBagPipelineEvents(ctx context.Context, days int) (removed int, err error)
+
+	InsertProviderPipelineEvents(ctx context.Context, events []db.ProviderPipelineEvent) (err error)
+	InsertBagPipelineEvents(ctx context.Context, events []db.BagPipelineEvent) (err error)
+	GetLastProviderPipelineEventStatus(ctx context.Context, pubkeys []string) (statusByPubkey map[string]db.PipelineEventStatus, err error)
 }
 
 func (r *repository) GetProvidersByPubkeys(ctx context.Context, pubkeys []string) (resp []db.ProviderDB, err error) {
@@ -779,7 +785,8 @@ func (r *repository) GetStorageContracts(ctx context.Context) (contracts []db.Co
 			sc.provider_address,
 			sc.address,
 			sc.bag_id,
-			sc.size
+			sc.size,
+			sc.reason
 		FROM providers.storage_contracts sc
 			JOIN providers.providers p ON p.address = sc.provider_address
 	`
@@ -803,6 +810,7 @@ func (r *repository) GetStorageContracts(ctx context.Context) (contracts []db.Co
 			&contract.Address,
 			&contract.BagID,
 			&contract.Size,
+			&contract.Reason,
 		); rErr != nil {
 			err = rErr
 			return
@@ -1087,6 +1095,134 @@ func (r *repository) CleanOldTelemetryHistory(ctx context.Context, days int) (re
 	}
 
 	removed = int(resp.RowsAffected())
+
+	return
+}
+
+func (r *repository) CleanOldProviderPipelineEvents(ctx context.Context, days int) (removed int, err error) {
+	query := `
+		DELETE FROM providers.provider_pipeline_events
+		WHERE created_at < NOW() - INTERVAL '1 day' * $1
+	`
+	resp, err := r.db.Exec(ctx, query, days)
+	if err != nil {
+		err = fmt.Errorf("failed to clean old provider pipeline events: %w", err)
+		return
+	}
+
+	removed = int(resp.RowsAffected())
+
+	return
+}
+
+func (r *repository) CleanOldBagPipelineEvents(ctx context.Context, days int) (removed int, err error) {
+	query := `
+		DELETE FROM providers.bag_pipeline_events
+		WHERE created_at < NOW() - INTERVAL '1 day' * $1
+	`
+	resp, err := r.db.Exec(ctx, query, days)
+	if err != nil {
+		err = fmt.Errorf("failed to clean old bag pipeline events: %w", err)
+		return
+	}
+
+	removed = int(resp.RowsAffected())
+
+	return
+}
+
+func (r *repository) InsertProviderPipelineEvents(ctx context.Context, events []db.ProviderPipelineEvent) (err error) {
+	if len(events) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO providers.provider_pipeline_events (
+			provider_pubkey, status, stage, reason_code, error_message, run_id, worker
+		)
+		SELECT
+			e->>'provider_pubkey',
+			e->>'status',
+			e->>'stage',
+			NULLIF(e->>'reason_code', '')::integer,
+			NULLIF(e->>'error_message', ''),
+			e->>'run_id',
+			e->>'worker'
+		FROM jsonb_array_elements($1::jsonb) AS e
+	`
+
+	_, err = r.db.Exec(ctx, query, events)
+	if err != nil {
+		err = fmt.Errorf("failed to insert provider pipeline events: %w", err)
+	}
+
+	return
+}
+
+func (r *repository) InsertBagPipelineEvents(ctx context.Context, events []db.BagPipelineEvent) (err error) {
+	if len(events) == 0 {
+		return nil
+	}
+
+	query := `
+		INSERT INTO providers.bag_pipeline_events (
+			provider_pubkey, contract_address, bag_id, status, stage,
+			reason_code, error_message, run_id, worker
+		)
+		SELECT
+			e->>'provider_pubkey',
+			e->>'contract_address',
+			e->>'bag_id',
+			e->>'status',
+			e->>'stage',
+			NULLIF(e->>'reason_code', '')::integer,
+			NULLIF(e->>'error_message', ''),
+			e->>'run_id',
+			e->>'worker'
+		FROM jsonb_array_elements($1::jsonb) AS e
+	`
+
+	_, err = r.db.Exec(ctx, query, events)
+	if err != nil {
+		err = fmt.Errorf("failed to insert bag pipeline events: %w", err)
+	}
+
+	return
+}
+
+func (r *repository) GetLastProviderPipelineEventStatus(ctx context.Context, pubkeys []string) (statusByPubkey map[string]db.PipelineEventStatus, err error) {
+	statusByPubkey = make(map[string]db.PipelineEventStatus)
+	if len(pubkeys) == 0 {
+		return statusByPubkey, nil
+	}
+
+	query := `
+		SELECT DISTINCT ON (provider_pubkey)
+			provider_pubkey,
+			status
+		FROM providers.provider_pipeline_events
+		WHERE provider_pubkey = ANY($1)
+		ORDER BY provider_pubkey, created_at DESC
+	`
+
+	rows, err := r.db.Query(ctx, query, pubkeys)
+	if err != nil {
+		err = fmt.Errorf("failed to get last provider pipeline event status: %w", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var pubkey string
+		var status string
+		if scanErr := rows.Scan(&pubkey, &status); scanErr != nil {
+			err = scanErr
+			return
+		}
+		statusByPubkey[pubkey] = db.PipelineEventStatus(status)
+	}
+
+	err = rows.Err()
 
 	return
 }

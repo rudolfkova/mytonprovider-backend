@@ -47,11 +47,15 @@ func TestMergeRunChecksResponses_PrefersValidProof(t *testing.T) {
 	}
 
 	merged, valid := mergeRunChecksResponses(contracts, responses)
-	if len(merged) != 1 {
-		t.Fatalf("expected 1 merged row, got %d", len(merged))
+	row, ok := merged["provider-addr-1|contract-1"]
+	if !ok {
+		t.Fatalf("expected merged row for contract-1")
 	}
-	if merged[0].Reason != constants.ValidStorageProof {
-		t.Fatalf("expected valid proof reason, got %d", merged[0].Reason)
+	if row.Reason != constants.ValidStorageProof {
+		t.Fatalf("expected valid proof reason, got %d", row.Reason)
+	}
+	if row.Details != "" && row.Stage == "" {
+		t.Fatalf("expected stage when details present")
 	}
 	if valid != 1 {
 		t.Fatalf("expected valid counter=1, got %d", valid)

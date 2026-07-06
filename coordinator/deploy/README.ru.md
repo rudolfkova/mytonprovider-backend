@@ -13,6 +13,7 @@
 1. VPS: Docker + Compose + Task + git; клон репо, нужная ветка (`git checkout <branch>`).
 2. **TLS:** CA и сертификаты агентов — [agent/README.ru.md](../../agent/README.ru.md); на coordinator: `secrets/agents-ca.crt`, каталог `certs/agent-*/` для выдачи.
 3. `task coordinator:deploy:init` → правка `coordinator/deploy/.env` (см. ниже).
+3a. **Pipeline events (если обновление с новой версией):** на существующей БД выполнить SQL **до** деплоя coordinator — [coordinator/db/migrations/README.ru.md](../db/migrations/README.ru.md) (`001_pipeline_events.up.sql`). Новые инсталлы получают таблицы из `init.sql` автоматически.
 4. `task coordinator:deploy:up` (в compose уже проброшен UDP `16167` для ADNL/DHT).
 5. Smoke: `/health`, `/metrics` с Bearer (см. [secrets/README.ru.md](secrets/README.ru.md)).
 6. Опционально: Tailscale на coordinator и агенты; `AGENT_ENDPOINTS` = Tailscale IP агентов.

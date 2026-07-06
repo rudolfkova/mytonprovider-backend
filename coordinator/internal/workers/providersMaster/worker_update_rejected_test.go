@@ -84,6 +84,18 @@ func (f *fakeProvidersRepo) UpdateProvidersIPInfo(context.Context, []db.Provider
 	return nil
 }
 
+func (f *fakeProvidersRepo) InsertProviderPipelineEvents(context.Context, []db.ProviderPipelineEvent) error {
+	return nil
+}
+
+func (f *fakeProvidersRepo) InsertBagPipelineEvents(context.Context, []db.BagPipelineEvent) error {
+	return nil
+}
+
+func (f *fakeProvidersRepo) GetLastProviderPipelineEventStatus(context.Context, []string) (map[string]db.PipelineEventStatus, error) {
+	return map[string]db.PipelineEventStatus{}, nil
+}
+
 type fakeSystemRepo struct{}
 
 func (f *fakeSystemRepo) SetParam(context.Context, string, string) error {

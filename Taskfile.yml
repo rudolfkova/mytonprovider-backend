@@ -421,9 +421,9 @@ tasks:
 
   agent:image:build:push:
     desc: Build and push agent image (set AGENT_IMAGE)
-    deps:
-      - agent:image:build
-      - agent:image:push
+    cmds:
+      - task: agent:image:build
+      - task: agent:image:push
 
   coordinator:deploy:init:
     desc: Prepare coordinator deploy env and secrets placeholders
@@ -544,6 +544,6 @@ tasks:
 
   coordinator:image:build:push:
     desc: Build and push coordinator image (set COORDINATOR_IMAGE)
-    deps:
-      - coordinator:image:build
-      - coordinator:image:push
+    cmds:
+      - task: coordinator:image:build
+      - task: coordinator:image:push

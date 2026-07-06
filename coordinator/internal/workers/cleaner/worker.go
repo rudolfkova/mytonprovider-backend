@@ -11,6 +11,8 @@ type repository interface {
 	CleanOldStatusesHistory(ctx context.Context, days int) (removed int, err error)
 	CleanOldBenchmarksHistory(ctx context.Context, days int) (removed int, err error)
 	CleanOldTelemetryHistory(ctx context.Context, days int) (removed int, err error)
+	CleanOldProviderPipelineEvents(ctx context.Context, days int) (removed int, err error)
+	CleanOldBagPipelineEvents(ctx context.Context, days int) (removed int, err error)
 }
 
 type cleanerWorker struct {
@@ -60,6 +62,20 @@ func (w *cleanerWorker) CleanupOldData(ctx context.Context) (interval time.Durat
 		interval = failureInterval
 	} else if removed > 0 {
 		log.Info("cleaned old telemetry history", slog.Int("removed", removed))
+	}
+
+	if removed, err := w.repo.CleanOldProviderPipelineEvents(ctx, w.days); err != nil {
+		log.Error("failed to clean old provider pipeline events", slog.Int("days", w.days), slog.String("err", err.Error()))
+		interval = failureInterval
+	} else if removed > 0 {
+		log.Info("cleaned old provider pipeline events", slog.Int("removed", removed))
+	}
+
+	if removed, err := w.repo.CleanOldBagPipelineEvents(ctx, w.days); err != nil {
+		log.Error("failed to clean old bag pipeline events", slog.Int("days", w.days), slog.String("err", err.Error()))
+		interval = failureInterval
+	} else if removed > 0 {
+		log.Info("cleaned old bag pipeline events", slog.Int("removed", removed))
 	}
 
 	return

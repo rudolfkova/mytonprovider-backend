@@ -224,3 +224,23 @@ func (r *Repository) GetProvidersEndpointState(_ context.Context, _ []string) ([
 func (r *Repository) UpdateProvidersIPInfo(_ context.Context, _ []db.ProviderIPInfo) error {
 	return nil
 }
+
+func (r *Repository) CleanOldProviderPipelineEvents(_ context.Context, _ int) (int, error) {
+	return 0, nil
+}
+
+func (r *Repository) CleanOldBagPipelineEvents(_ context.Context, _ int) (int, error) {
+	return 0, nil
+}
+
+func (r *Repository) InsertProviderPipelineEvents(_ context.Context, _ []db.ProviderPipelineEvent) error {
+	return nil
+}
+
+func (r *Repository) InsertBagPipelineEvents(_ context.Context, _ []db.BagPipelineEvent) error {
+	return nil
+}
+
+func (r *Repository) GetLastProviderPipelineEventStatus(_ context.Context, _ []string) (map[string]db.PipelineEventStatus, error) {
+	return map[string]db.PipelineEventStatus{}, nil
+}

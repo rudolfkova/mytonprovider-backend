@@ -34,6 +34,7 @@ import (
 	tonclient "mytonprovider-coordinator/internal/clients/ton"
 	"mytonprovider-coordinator/internal/constants"
 	"mytonprovider-coordinator/internal/models/db"
+	"mytonprovider-coordinator/internal/pipelineevents"
 	"mytonprovider-coordinator/internal/tonstorage"
 	"mytonprovider-coordinator/internal/utils"
 )
@@ -79,6 +80,10 @@ type providers interface {
 	GetProvidersIPs(ctx context.Context) (ips []db.ProviderIP, err error)
 	GetProvidersEndpointState(ctx context.Context, pubkeys []string) (rows []db.ProviderEndpointState, err error)
 	UpdateProvidersIPInfo(ctx context.Context, ips []db.ProviderIPInfo) (err error)
+
+	InsertProviderPipelineEvents(ctx context.Context, events []db.ProviderPipelineEvent) (err error)
+	InsertBagPipelineEvents(ctx context.Context, events []db.BagPipelineEvent) (err error)
+	GetLastProviderPipelineEventStatus(ctx context.Context, pubkeys []string) (statusByPubkey map[string]db.PipelineEventStatus, err error)
 }
 
 type system interface {
@@ -476,6 +481,9 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 
 	interval = successInterval
 
+	runID := fmt.Sprintf("storeproof-%d", time.Now().Unix())
+	recorder := pipelineevents.NewRecorder(w.providers, w.logger, runID, "StoreProof")
+
 	storageContracts, err := w.providers.GetStorageContracts(ctx)
 	if err != nil {
 		log.Error("failed to get storage contracts", "error", err)
@@ -484,7 +492,7 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 		return
 	}
 
-	if _, refreshErr := w.refreshProvidersEndpoints(ctx, storageContracts, true); refreshErr != nil {
+	if _, refreshErr := w.refreshProvidersEndpoints(ctx, storageContracts, true, recorder); refreshErr != nil {
 		log.Warn("stale-first endpoint refresh failed before StoreProof", "error", refreshErr)
 	}
 
@@ -494,15 +502,16 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 		return
 	}
 
-	availableProvidersIPs, err := w.updateProvidersIPs(ctx, storageContracts)
+	availableProvidersIPs, err := w.updateProvidersIPs(ctx, storageContracts, recorder)
 	if err != nil {
 		interval = failureInterval
 		return
 	}
 
-	err = w.updateActiveContracts(ctx, storageContracts, availableProvidersIPs)
+	err = w.updateActiveContracts(ctx, storageContracts, availableProvidersIPs, recorder)
 	if err != nil {
 		interval = failureInterval
+		recorder.Flush(ctx)
 		return
 	}
 
@@ -510,8 +519,11 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 	if err != nil {
 		log.Error("failed to update provider statuses", "error", err)
 		interval = failureInterval
+		recorder.Flush(ctx)
 		return
 	}
+
+	recorder.Flush(ctx)
 
 	return
 }
@@ -623,14 +635,21 @@ func (w *providersMasterWorker) UpdateIPInfo(ctx context.Context) (interval time
 }
 
 // updateActiveContracts check storage proofs for all bags and update status for relations provider-contract
-func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (err error) {
+func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP, recorder *pipelineevents.Recorder) (err error) {
 	log := w.logger.With(slog.String("worker", "StoreProof"), slog.String("function", "updateActiveContracts"))
 	if w.agentClient == nil || w.agentClient.AgentCount() == 0 {
 		return fmt.Errorf("no configured agent clients for RunChecks")
 	}
 
-	req, providerCount := w.buildRunChecksRPCRequest(storageContracts, availableProvidersIPs)
+	req, providerCount, checkedKeys := w.buildRunChecksRPCRequest(storageContracts, availableProvidersIPs)
 	if providerCount == 0 {
+		if recorder != nil {
+			for _, sc := range storageContracts {
+				if _, ok := checkedKeys[contractRelationKey(sc)]; !ok {
+					recorder.RecordBagEndpointUnresolved(sc)
+				}
+			}
+		}
 		return fmt.Errorf("no providers with resolved endpoints for RunChecks")
 	}
 
@@ -642,7 +661,28 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 		return fmt.Errorf("all agents are unavailable for RunChecks")
 	}
 
-	contractProofsChecks, valid := mergeRunChecksResponses(storageContracts, responses)
+	merged, valid := mergeRunChecksResponses(storageContracts, responses)
+
+	if recorder != nil {
+		for _, sc := range storageContracts {
+			key := contractRelationKey(sc)
+			if _, inBatch := checkedKeys[key]; !inBatch {
+				recorder.RecordBagEndpointUnresolved(sc)
+				continue
+			}
+			row, ok := merged[key]
+			if !ok {
+				recorder.RecordBagTransition(sc, constants.NotFound, pipelineevents.StageAgentRunChecksNoResult, "agent did not return result for contract")
+				continue
+			}
+			recorder.RecordBagTransition(sc, row.Reason, row.Stage, row.Details)
+		}
+	}
+
+	contractProofsChecks := make([]db.ContractProofsCheck, 0, len(merged))
+	for _, row := range merged {
+		contractProofsChecks = append(contractProofsChecks, row.ContractProofsCheck)
+	}
 
 	err = w.providers.UpdateContractProofsChecks(ctx, contractProofsChecks)
 	if err != nil {
@@ -661,12 +701,23 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 	return nil
 }
 
-func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (*providerchecksv1.RunChecksRequest, int) {
+type mergedContractCheck struct {
+	db.ContractProofsCheck
+	Details string
+	Stage   string
+}
+
+func contractRelationKey(sc db.ContractToProviderRelation) string {
+	return sc.ProviderAddress + "|" + sc.Address
+}
+
+func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (*providerchecksv1.RunChecksRequest, int, map[string]struct{}) {
 	providersContracts := make(map[string][]db.ContractToProviderRelation)
 	for _, sc := range storageContracts {
 		providersContracts[sc.ProviderPublicKey] = append(providersContracts[sc.ProviderPublicKey], sc)
 	}
 
+	checkedKeys := make(map[string]struct{})
 	providers := make([]*providerchecksv1.ProviderBatch, 0, len(providersContracts))
 	for pubkey, contracts := range providersContracts {
 		ip, ok := availableProvidersIPs[pubkey]
@@ -675,6 +726,7 @@ func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.C
 		}
 		contractRefs := make([]*providerchecksv1.ContractRef, 0, len(contracts))
 		for _, c := range contracts {
+			checkedKeys[contractRelationKey(c)] = struct{}{}
 			contractRefs = append(contractRefs, &providerchecksv1.ContractRef{
 				ContractAddress: c.Address,
 				BagId:           c.BagID,
@@ -700,17 +752,19 @@ func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.C
 			RldpMs:  w.timeouts.RldpMs,
 			TotalMs: w.timeouts.TotalMs,
 		},
-	}, len(providers)
+	}, len(providers), checkedKeys
 }
 
-func mergeRunChecksResponses(storageContracts []db.ContractToProviderRelation, responses []agentrpc.RunChecksResult) ([]db.ContractProofsCheck, int) {
+func mergeRunChecksResponses(storageContracts []db.ContractToProviderRelation, responses []agentrpc.RunChecksResult) (byKey map[string]mergedContractCheck, valid int) {
 	type selectedResult struct {
 		reason   constants.ReasonCode
 		hasValue bool
 		valid    bool
+		details  string
+		stage    string
 	}
 
-	byKey := make(map[string]selectedResult, len(storageContracts))
+	merged := make(map[string]selectedResult, len(storageContracts))
 	for _, agentResp := range responses {
 		if agentResp.Response == nil {
 			continue
@@ -721,13 +775,17 @@ func mergeRunChecksResponses(storageContracts []db.ContractToProviderRelation, r
 			}
 			key := row.GetProviderAddress() + "|" + row.GetContractAddress()
 			reasonCode := reasonFromProto(row.GetReasonCode())
+			details := row.GetDetails()
+			stage := pipelineevents.ParseStageFromDetails(details)
 
-			current := byKey[key]
+			current := merged[key]
 			if !current.hasValue {
-				byKey[key] = selectedResult{
+				merged[key] = selectedResult{
 					reason:   reasonCode,
 					hasValue: true,
 					valid:    reasonCode == constants.ValidStorageProof,
+					details:  details,
+					stage:    stage,
 				}
 				continue
 			}
@@ -735,35 +793,45 @@ func mergeRunChecksResponses(storageContracts []db.ContractToProviderRelation, r
 				continue
 			}
 			if reasonCode == constants.ValidStorageProof {
-				byKey[key] = selectedResult{
+				merged[key] = selectedResult{
 					reason:   reasonCode,
 					hasValue: true,
 					valid:    true,
+					details:  details,
+					stage:    stage,
 				}
 			}
 		}
 	}
 
-	valid := 0
-	contractProofsChecks := make([]db.ContractProofsCheck, 0, len(storageContracts))
+	valid = 0
+	byKey = make(map[string]mergedContractCheck, len(storageContracts))
 	for _, sc := range storageContracts {
-		key := sc.ProviderAddress + "|" + sc.Address
-		chosen, ok := byKey[key]
+		key := contractRelationKey(sc)
+		chosen, ok := merged[key]
 		reasonCode := constants.NotFound
+		details := ""
+		stage := pipelineevents.StageAgentRunChecksNoResult
 		if ok && chosen.hasValue {
 			reasonCode = chosen.reason
+			details = chosen.details
+			stage = chosen.stage
 		}
 		if reasonCode == constants.ValidStorageProof {
 			valid++
 		}
-		contractProofsChecks = append(contractProofsChecks, db.ContractProofsCheck{
-			ContractAddress: sc.Address,
-			ProviderAddress: sc.ProviderAddress,
-			Reason:          reasonCode,
-		})
+		byKey[key] = mergedContractCheck{
+			ContractProofsCheck: db.ContractProofsCheck{
+				ContractAddress: sc.Address,
+				ProviderAddress: sc.ProviderAddress,
+				Reason:          reasonCode,
+			},
+			Details: details,
+			Stage:   stage,
+		}
 	}
 
-	return contractProofsChecks, valid
+	return byKey, valid
 }
 
 func mergeStorageRatesResponses(pubkeys []string, responses []agentrpc.RunStorageRatesResult) map[string]*providerchecksv1.StorageRatesResult {
@@ -1087,8 +1155,8 @@ func (w *providersMasterWorker) updateRejectedContracts(ctx context.Context, sto
 	return
 }
 
-func (w *providersMasterWorker) updateProvidersIPs(ctx context.Context, storageContracts []db.ContractToProviderRelation) (availableProvidersIPs map[string]db.ProviderIP, err error) {
-	return w.refreshProvidersEndpoints(ctx, storageContracts, false)
+func (w *providersMasterWorker) updateProvidersIPs(ctx context.Context, storageContracts []db.ContractToProviderRelation, recorder *pipelineevents.Recorder) (availableProvidersIPs map[string]db.ProviderIP, err error) {
+	return w.refreshProvidersEndpoints(ctx, storageContracts, false, recorder)
 }
 
 func (w *providersMasterWorker) findStorageIPOverlay(ctx context.Context, providerIP string, contracts []db.ContractToProviderRelation, log *slog.Logger) (ip db.IPInfo, err error) {
@@ -1228,7 +1296,7 @@ func (w *providersMasterWorker) findStorageIP(ctx context.Context, addr *address
 		return
 	}, verifyStorageRetries)
 	if err != nil {
-		err = fmt.Errorf("failed to verify storage adnl proof: %w", err)
+		err = stageError(pipelineevents.StageVerifyStorageADNLProof, fmt.Errorf("failed to verify storage adnl proof: %w", err))
 		return
 	}
 
@@ -1236,19 +1304,19 @@ func (w *providersMasterWorker) findStorageIP(ctx context.Context, addr *address
 	defer cancel()
 	l, pub, err := w.dhtClient.FindAddresses(dhtTimeoutCtx, proof)
 	if err != nil {
-		err = fmt.Errorf("failed to find addresses in dht: %w", err)
+		err = stageError(pipelineevents.StageDHTFindStorageAddresses, fmt.Errorf("failed to find addresses in dht: %w", err))
 		return
 	}
 
 	if l == nil || len(l.Addresses) == 0 {
-		err = fmt.Errorf("no storage addresses found")
+		err = stageError(pipelineevents.StageDHTFindStorageAddresses, fmt.Errorf("no storage addresses found"))
 		return
 	}
 
 	ip.PublicKey = pub
 	ipVal := adnladdress.IPValue(l.Addresses[0])
 	if ipVal == nil {
-		err = fmt.Errorf("empty storage address ip")
+		err = stageError(pipelineevents.StageDHTFindStorageAddresses, fmt.Errorf("empty storage address ip"))
 		return
 	}
 	ip.IP = ipVal.String()
@@ -1260,7 +1328,7 @@ func (w *providersMasterWorker) findStorageIP(ctx context.Context, addr *address
 func (w *providersMasterWorker) findProviderIP(ctx context.Context, pk []byte) (ip db.IPInfo, err error) {
 	channelKeyId, err := tl.Hash(keys.PublicKeyED25519{Key: pk})
 	if err != nil {
-		err = fmt.Errorf("failed to calc hash of provider key: %w", err)
+		err = stageError(pipelineevents.StageDHTFindProviderRecord, fmt.Errorf("failed to calc hash of provider key: %w", err))
 		return
 	}
 
@@ -1272,18 +1340,18 @@ func (w *providersMasterWorker) findProviderIP(ctx context.Context, pk []byte) (
 		Index: 0,
 	})
 	if err != nil {
-		err = fmt.Errorf("failed to find storage-provider in dht: %w", err)
+		err = stageError(pipelineevents.StageDHTFindProviderRecord, fmt.Errorf("failed to find storage-provider in dht: %w", err))
 		return
 	}
 
 	var nodeAddr transport.ProviderDHTRecord
 	if _, pErr := tl.Parse(&nodeAddr, dhtVal.Data, true); pErr != nil {
-		err = fmt.Errorf("failed to parse node dht value: %w", pErr)
+		err = stageError(pipelineevents.StageDHTFindProviderRecord, fmt.Errorf("failed to parse node dht value: %w", pErr))
 		return
 	}
 
 	if len(nodeAddr.ADNLAddr) == 0 {
-		err = fmt.Errorf("no adnl addresses in node dht value")
+		err = stageError(pipelineevents.StageDHTFindProviderRecord, fmt.Errorf("no adnl addresses in node dht value"))
 		return
 	}
 
@@ -1291,19 +1359,19 @@ func (w *providersMasterWorker) findProviderIP(ctx context.Context, pk []byte) (
 	defer cancel2()
 	l, pub, fErr := w.dhtClient.FindAddresses(dhtTimeoutCtx2, nodeAddr.ADNLAddr)
 	if fErr != nil {
-		err = fmt.Errorf("failed to find adnl addresses in dht: %w", fErr)
+		err = stageError(pipelineevents.StageDHTFindProviderAddresses, fmt.Errorf("failed to find adnl addresses in dht: %w", fErr))
 		return
 	}
 
 	if l == nil || len(l.Addresses) == 0 {
-		err = fmt.Errorf("no provider addresses found")
+		err = stageError(pipelineevents.StageDHTFindProviderAddresses, fmt.Errorf("no provider addresses found"))
 		return
 	}
 
 	ip.PublicKey = pub
 	ipVal := adnladdress.IPValue(l.Addresses[0])
 	if ipVal == nil {
-		err = fmt.Errorf("empty provider address ip")
+		err = stageError(pipelineevents.StageDHTFindProviderAddresses, fmt.Errorf("empty provider address ip"))
 		return
 	}
 	ip.IP = ipVal.String()

@@ -3,6 +3,7 @@ package providersmaster
 import (
 	"context"
 	"crypto/ed25519"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"mytonprovider-coordinator/internal/models/db"
+	"mytonprovider-coordinator/internal/pipelineevents"
 )
 
 var (
@@ -108,7 +110,7 @@ func (w *providersMasterWorker) RefreshEndpointsFull(ctx context.Context) (inter
 		return successInterval, nil
 	}
 
-	refreshed, refreshErr := w.refreshProvidersEndpoints(ctx, storageContracts, false)
+	refreshed, refreshErr := w.refreshProvidersEndpoints(ctx, storageContracts, false, nil)
 	if refreshErr != nil {
 		log.Error("full endpoint refresh failed", "error", refreshErr)
 		return failureInterval, refreshErr
@@ -118,7 +120,7 @@ func (w *providersMasterWorker) RefreshEndpointsFull(ctx context.Context) (inter
 	return successInterval, nil
 }
 
-func (w *providersMasterWorker) refreshProvidersEndpoints(ctx context.Context, storageContracts []db.ContractToProviderRelation, staleOnly bool) (availableProvidersIPs map[string]db.ProviderIP, err error) {
+func (w *providersMasterWorker) refreshProvidersEndpoints(ctx context.Context, storageContracts []db.ContractToProviderRelation, staleOnly bool, recorder *pipelineevents.Recorder) (availableProvidersIPs map[string]db.ProviderIP, err error) {
 	mode := "full"
 	if staleOnly {
 		mode = "stale"
@@ -178,6 +180,21 @@ func (w *providersMasterWorker) refreshProvidersEndpoints(ctx context.Context, s
 		return map[string]db.ProviderIP{}, nil
 	}
 
+	if recorder != nil && len(targets) > 0 {
+		targetPubkeys := make([]string, 0, len(targets))
+		seenPubkeys := make(map[string]struct{}, len(targets))
+		for _, sc := range targets {
+			if _, ok := seenPubkeys[sc.ProviderPublicKey]; ok {
+				continue
+			}
+			seenPubkeys[sc.ProviderPublicKey] = struct{}{}
+			targetPubkeys = append(targetPubkeys, sc.ProviderPublicKey)
+		}
+		if loadErr := recorder.LoadProviderStatuses(ctx, targetPubkeys); loadErr != nil {
+			log.Warn("failed to load provider pipeline event statuses", "error", loadErr)
+		}
+	}
+
 	availableProvidersIPs = make(map[string]db.ProviderIP, len(uniqueProviders))
 	resolvedForPersist := make(map[string]db.ProviderIP, len(targets))
 	for pubkey := range uniqueProviders {
@@ -187,6 +204,7 @@ func (w *providersMasterWorker) refreshProvidersEndpoints(ctx context.Context, s
 	}
 
 	notFoundIPs := make([]string, 0, len(targets))
+	resolveErrors := make(map[string]error, len(targets))
 	semaphore := make(chan struct{}, maxConcurrentProviderChecks)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -206,6 +224,9 @@ func (w *providersMasterWorker) refreshProvidersEndpoints(ctx context.Context, s
 			if resolveErr != nil {
 				endpointRefreshAttemptsTotal.WithLabelValues(mode, "error").Inc()
 				notFoundIPs = append(notFoundIPs, contract.ProviderPublicKey)
+				if _, exists := resolveErrors[contract.ProviderPublicKey]; !exists {
+					resolveErrors[contract.ProviderPublicKey] = resolveErr
+				}
 				if hasValidResolvedStorageEndpoint(resolved) {
 					availableProvidersIPs[contract.ProviderPublicKey] = resolved
 				}
@@ -222,6 +243,7 @@ func (w *providersMasterWorker) refreshProvidersEndpoints(ctx context.Context, s
 	}
 	wg.Wait()
 
+	overlayFailed := make(map[string]error, len(notFoundIPs))
 	for _, pk := range notFoundIPs {
 		ip := availableProvidersIPs[pk]
 		if strings.TrimSpace(ip.Provider.IP) == "" {
@@ -236,6 +258,7 @@ func (w *providersMasterWorker) refreshProvidersEndpoints(ctx context.Context, s
 		storageIP, overlayErr := w.findStorageIPOverlay(ctx, ip.Provider.IP, contracts, log)
 		if overlayErr != nil {
 			log.Warn("overlay fallback for storage endpoint failed", "provider_pubkey", pk, "error", overlayErr)
+			overlayFailed[pk] = overlayErr
 			continue
 		}
 
@@ -245,6 +268,35 @@ func (w *providersMasterWorker) refreshProvidersEndpoints(ctx context.Context, s
 			resolvedForPersist[pk] = ip
 			w.setLastKnownIP(pk, ip)
 			endpointRefreshAttemptsTotal.WithLabelValues(mode, "overlay_success").Inc()
+		}
+	}
+
+	if recorder != nil {
+		seenPubkeys := make(map[string]struct{}, len(targets))
+		for _, sc := range targets {
+			pk := sc.ProviderPublicKey
+			if _, ok := seenPubkeys[pk]; ok {
+				continue
+			}
+			seenPubkeys[pk] = struct{}{}
+
+			if hasValidResolvedStorageEndpoint(availableProvidersIPs[pk]) {
+				recorder.RecordProviderResolve(pk, pipelineevents.StageEndpointResolve, true, nil)
+				continue
+			}
+
+			stage := pipelineevents.StageEndpointResolve
+			var recordErr error
+			if overlayErr, ok := overlayFailed[pk]; ok {
+				stage = pipelineevents.StageOverlayStorageFallback
+				recordErr = overlayErr
+			} else if resolveErr, ok := resolveErrors[pk]; ok {
+				stage = resolveStageFromErr(resolveErr)
+				recordErr = resolveErr
+			} else {
+				recordErr = fmt.Errorf("storage endpoint not resolved")
+			}
+			recorder.RecordProviderResolve(pk, stage, false, recordErr)
 		}
 	}
 
