@@ -5,7 +5,8 @@ const (
 	StageEndpointUnresolved   = "endpoint_unresolved"
 	StageRecovered              = "recovered"
 	StageUnknown                = "unknown"
-	StageAgentRunChecksNoResult = "agent_runchecks_no_result"
+	StageAgentRunChecksNoResult   = "agent_runchecks_no_result"
+	StageAgentRunChecksUnavailable = "agent_runchecks_unavailable"
 
 	StageDHTFindProviderRecord    = "dht_find_provider_record"
 	StageDHTFindProviderAddresses = "dht_find_provider_addresses"

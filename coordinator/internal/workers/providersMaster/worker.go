@@ -103,6 +103,7 @@ type ipclient interface {
 
 type agentclient interface {
 	RunChecksAll(ctx context.Context, req *providerchecksv1.RunChecksRequest) ([]agentrpc.RunChecksResult, []agentrpc.AgentCallError)
+	RunChecksAllWithTimeout(ctx context.Context, req *providerchecksv1.RunChecksRequest, timeout time.Duration) ([]agentrpc.RunChecksResult, []agentrpc.AgentCallError)
 	RunStorageRatesAll(ctx context.Context, req *providerchecksv1.RunStorageRatesRequest) ([]agentrpc.RunStorageRatesResult, []agentrpc.AgentCallError)
 	AgentCount() int
 }
@@ -130,9 +131,10 @@ type providersMasterWorker struct {
 	agentClient    agentclient
 	dhtClient      *dht.Client
 	masterAddr     string
-	batchSize      uint32
-	timeouts       RunChecksTimeouts
-	endpointCfg    EndpointRefreshConfig
+	batchSize            uint32
+	timeouts             RunChecksTimeouts
+	runChecksPerProvider RunChecksPerProviderConfig
+	endpointCfg          EndpointRefreshConfig
 	logger         *slog.Logger
 	lastIPsMu      sync.RWMutex
 	lastKnownIPs   map[string]db.ProviderIP
@@ -508,7 +510,7 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 		return
 	}
 
-	err = w.updateActiveContracts(ctx, storageContracts, availableProvidersIPs, recorder)
+	err = w.updateActiveContracts(ctx, runID, storageContracts, availableProvidersIPs, recorder)
 	if err != nil {
 		interval = failureInterval
 		recorder.Flush(ctx)
@@ -635,7 +637,14 @@ func (w *providersMasterWorker) UpdateIPInfo(ctx context.Context) (interval time
 }
 
 // updateActiveContracts check storage proofs for all bags and update status for relations provider-contract
-func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP, recorder *pipelineevents.Recorder) (err error) {
+func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, storeProofRunID string, storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP, recorder *pipelineevents.Recorder) (err error) {
+	if w.runChecksPerProvider.Enabled {
+		return w.updateActiveContractsPerProvider(ctx, storeProofRunID, storageContracts, availableProvidersIPs, recorder)
+	}
+	return w.updateActiveContractsBatch(ctx, storageContracts, availableProvidersIPs, recorder)
+}
+
+func (w *providersMasterWorker) updateActiveContractsBatch(ctx context.Context, storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP, recorder *pipelineevents.Recorder) (err error) {
 	log := w.logger.With(slog.String("worker", "StoreProof"), slog.String("function", "updateActiveContracts"))
 	if w.agentClient == nil || w.agentClient.AgentCount() == 0 {
 		return fmt.Errorf("no configured agent clients for RunChecks")
@@ -712,47 +721,17 @@ func contractRelationKey(sc db.ContractToProviderRelation) string {
 }
 
 func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (*providerchecksv1.RunChecksRequest, int, map[string]struct{}) {
-	providersContracts := make(map[string][]db.ContractToProviderRelation)
-	for _, sc := range storageContracts {
-		providersContracts[sc.ProviderPublicKey] = append(providersContracts[sc.ProviderPublicKey], sc)
-	}
-
-	checkedKeys := make(map[string]struct{})
-	providers := make([]*providerchecksv1.ProviderBatch, 0, len(providersContracts))
-	for pubkey, contracts := range providersContracts {
-		ip, ok := availableProvidersIPs[pubkey]
-		if !ok || strings.TrimSpace(ip.Storage.IP) == "" || ip.Storage.Port <= 0 || len(ip.Storage.PublicKey) != ed25519.PublicKeySize {
-			continue
-		}
-		contractRefs := make([]*providerchecksv1.ContractRef, 0, len(contracts))
-		for _, c := range contracts {
-			checkedKeys[contractRelationKey(c)] = struct{}{}
-			contractRefs = append(contractRefs, &providerchecksv1.ContractRef{
-				ContractAddress: c.Address,
-				BagId:           c.BagID,
-			})
-		}
-		providers = append(providers, &providerchecksv1.ProviderBatch{
-			ProviderPubkey:  pubkey,
-			ProviderAddress: contracts[0].ProviderAddress,
-			StorageEndpoint: &providerchecksv1.Endpoint{
-				Ip:         ip.Storage.IP,
-				Port:       ip.Storage.Port,
-				AdnlPubkey: append([]byte(nil), ip.Storage.PublicKey...),
-			},
-			Contracts: contractRefs,
-		})
-	}
+	build := w.buildProviderBatches(storageContracts, availableProvidersIPs)
 
 	return &providerchecksv1.RunChecksRequest{
 		JobId:     fmt.Sprintf("storeproof-%d", time.Now().Unix()),
-		Providers: providers,
+		Providers: build.batches,
 		Timeouts: &providerchecksv1.CheckTimeouts{
 			PingMs:  w.timeouts.PingMs,
 			RldpMs:  w.timeouts.RldpMs,
 			TotalMs: w.timeouts.TotalMs,
 		},
-	}, len(providers), checkedKeys
+	}, len(build.batches), build.checkedKeys
 }
 
 func mergeRunChecksResponses(storageContracts []db.ContractToProviderRelation, responses []agentrpc.RunChecksResult) (byKey map[string]mergedContractCheck, valid int) {
@@ -1430,6 +1409,7 @@ func NewWorker(
 	masterAddr string,
 	batchSize uint32,
 	timeouts RunChecksTimeouts,
+	runChecksPerProvider RunChecksPerProviderConfig,
 	endpointCfg EndpointRefreshConfig,
 	logger *slog.Logger,
 ) Worker {
@@ -1450,19 +1430,20 @@ func NewWorker(
 	}
 
 	return &providersMasterWorker{
-		providers:      providers,
-		system:         system,
-		ton:            ton,
-		prv:            prv,
-		providerClient: providerClient,
-		agentClient:    agentClient,
-		dhtClient:      dhtClient,
-		ipinfo:         ipinfo,
-		masterAddr:     masterAddr,
-		batchSize:      batchSize,
-		timeouts:       timeouts,
-		endpointCfg:    endpointCfg,
-		logger:         logger,
-		lastKnownIPs:   make(map[string]db.ProviderIP),
+		providers:            providers,
+		system:               system,
+		ton:                  ton,
+		prv:                  prv,
+		providerClient:       providerClient,
+		agentClient:          agentClient,
+		dhtClient:            dhtClient,
+		ipinfo:               ipinfo,
+		masterAddr:           masterAddr,
+		batchSize:            batchSize,
+		timeouts:             timeouts,
+		runChecksPerProvider: normalizeRunChecksPerProviderConfig(runChecksPerProvider),
+		endpointCfg:          endpointCfg,
+		logger:               logger,
+		lastKnownIPs:         make(map[string]db.ProviderIP),
 	}
 }

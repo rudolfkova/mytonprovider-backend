@@ -49,6 +49,13 @@ type Agents struct {
 	RunChecksRldpMs     uint32 `env:"COORDINATOR_RUNCHECKS_RLDP_MS" envDefault:"2000"`
 	RunChecksTotalMs    uint32 `env:"COORDINATOR_RUNCHECKS_TOTAL_MS" envDefault:"1200000"`
 	StorageRatesQueryMs uint32 `env:"COORDINATOR_STORAGERATES_QUERY_TIMEOUT_MS" envDefault:"14000"`
+
+	RunChecksPerProvider           bool   `env:"COORDINATOR_RUNCHECKS_PER_PROVIDER" envDefault:"false"`
+	RunChecksMaxConcurrentProviders int   `env:"COORDINATOR_RUNCHECKS_MAX_CONCURRENT_PROVIDERS" envDefault:"40"`
+	RunChecksMsPerBag              uint32 `env:"COORDINATOR_RUNCHECKS_MS_PER_BAG" envDefault:"500"`
+	RunChecksMinTotalMs            uint32 `env:"COORDINATOR_RUNCHECKS_MIN_TOTAL_MS" envDefault:"3000"`
+	RunChecksRPCSlackMs            uint32 `env:"COORDINATOR_RUNCHECKS_RPC_SLACK_MS" envDefault:"5000"`
+	RunChecksAgentRPCRetries       int    `env:"COORDINATOR_RUNCHECKS_AGENT_RPC_RETRIES" envDefault:"1"`
 }
 
 type Postgress struct {

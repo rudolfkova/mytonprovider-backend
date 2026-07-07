@@ -143,6 +143,7 @@ func run() error {
 					TotalMs:             uint32(totalMS),
 					StorageRatesQueryMs: uint32(ratesQueryTimeoutMS),
 				},
+				providersmaster.RunChecksPerProviderConfig{},
 				providersmaster.EndpointRefreshConfig{},
 				logger,
 			)

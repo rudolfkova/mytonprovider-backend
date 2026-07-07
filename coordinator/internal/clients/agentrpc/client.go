@@ -126,8 +126,17 @@ func (c *Client) AgentCount() int {
 }
 
 func (c *Client) RunChecksAll(ctx context.Context, req *providerchecksv1.RunChecksRequest) ([]RunChecksResult, []AgentCallError) {
+	return c.RunChecksAllWithTimeout(ctx, req, 0)
+}
+
+func (c *Client) RunChecksAllWithTimeout(ctx context.Context, req *providerchecksv1.RunChecksRequest, timeout time.Duration) ([]RunChecksResult, []AgentCallError) {
 	if c == nil || len(c.agents) == 0 {
 		return nil, nil
+	}
+
+	callTimeout := timeout
+	if callTimeout <= 0 {
+		callTimeout = c.requestTimeout
 	}
 
 	results := make([]RunChecksResult, 0, len(c.agents))
@@ -142,8 +151,8 @@ func (c *Client) RunChecksAll(ctx context.Context, req *providerchecksv1.RunChec
 
 			callCtx := ctx
 			cancel := func() {}
-			if c.requestTimeout > 0 {
-				callCtx, cancel = context.WithTimeout(ctx, c.requestTimeout)
+			if callTimeout > 0 {
+				callCtx, cancel = context.WithTimeout(ctx, callTimeout)
 			}
 			defer cancel()
 			callCtx = metadata.AppendToOutgoingContext(callCtx, "authorization", "Bearer "+c.authToken)

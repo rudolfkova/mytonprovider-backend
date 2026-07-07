@@ -178,6 +178,14 @@ func run() (err error) {
 			TotalMs:             config.Agents.RunChecksTotalMs,
 			StorageRatesQueryMs: config.Agents.StorageRatesQueryMs,
 		},
+		providersmaster.RunChecksPerProviderConfig{
+			Enabled:                config.Agents.RunChecksPerProvider,
+			MaxConcurrentProviders: config.Agents.RunChecksMaxConcurrentProviders,
+			MsPerBag:               config.Agents.RunChecksMsPerBag,
+			MinTotalMs:             config.Agents.RunChecksMinTotalMs,
+			RpcSlackMs:             config.Agents.RunChecksRPCSlackMs,
+			AgentRPCRetries:        config.Agents.RunChecksAgentRPCRetries,
+		},
 		providersmaster.EndpointRefreshConfig{
 			StaleTTL:            time.Duration(config.System.EndpointStaleTTLMinutes) * time.Minute,
 			FullRefreshInterval: time.Duration(config.System.EndpointFullRefreshIntervalMinutes) * time.Minute,
