@@ -44,6 +44,7 @@ func (h *handler) RegisterRoutes() {
 		{
 			contracts := apiv1.Group("/contracts")
 			contracts.Post("/statuses", h.getStorageContractsStatuses)
+			contracts.Post("/bags", h.authorizationMiddleware, h.getContractBags)
 		}
 
 		apiv1.Post("/benchmarks", h.updateBenchmarks)

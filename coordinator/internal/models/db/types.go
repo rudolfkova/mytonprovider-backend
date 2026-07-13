@@ -310,3 +310,13 @@ type ContractCheck struct {
 	ReasonTimestamp   *time.Time
 	Reason            *uint32
 }
+
+type ContractBag struct {
+	Address           string
+	ProviderPublicKey string
+	BagID             string
+	OwnerAddress      string
+	Size              uint64
+	Reason            *uint32
+	ReasonTimestamp   *time.Time
+}

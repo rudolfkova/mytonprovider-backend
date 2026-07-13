@@ -93,6 +93,17 @@ func (m *metricsMiddleware) GetStorageContractsChecks(ctx context.Context, contr
 	return m.repo.GetStorageContractsChecks(ctx, contracts)
 }
 
+func (m *metricsMiddleware) GetContractBags(ctx context.Context, pubkey string, limit, offset int) (contracts []db.ContractBag, total int, err error) {
+	defer func(s time.Time) {
+		labels := []string{
+			"GetContractBags", strconv.FormatBool(err != nil),
+		}
+		m.reqCount.WithLabelValues(labels...).Add(1)
+		m.reqDuration.WithLabelValues(labels...).Observe(time.Since(s).Seconds())
+	}(time.Now())
+	return m.repo.GetContractBags(ctx, pubkey, limit, offset)
+}
+
 func (m *metricsMiddleware) UpdateContractProofsChecks(ctx context.Context, contractsProofs []db.ContractProofsCheck) (err error) {
 	defer func(s time.Time) {
 		labels := []string{

@@ -28,6 +28,7 @@ type providers interface {
 	GetFiltersRange(ctx context.Context) (db.FiltersRange, error)
 	GetFilteredProviders(ctx context.Context, filters db.ProviderFilters, sort db.ProviderSort, limit, offset int) ([]db.ProviderDB, error)
 	GetStorageContractsChecks(ctx context.Context, contracts []string) ([]db.ContractCheck, error)
+	GetContractBags(ctx context.Context, pubkey string, limit, offset int) (contracts []db.ContractBag, total int, err error)
 }
 
 type Providers interface {
@@ -37,6 +38,7 @@ type Providers interface {
 	UpdateTelemetry(ctx context.Context, telemetry v1.TelemetryRequest, rawBody []byte) (err error)
 	UpdateBenchmarks(ctx context.Context, benchmark v1.BenchmarksRequest) (err error)
 	GetStorageContractsChecks(ctx context.Context, req v1.ContractsStatusesRequest) ([]v1.ContractCheck, error)
+	GetContractBags(ctx context.Context, req v1.ContractBagsRequest) ([]v1.ContractBag, int, error)
 }
 
 func (s *service) SearchProviders(ctx context.Context, req v1.SearchProvidersRequest) (providers []v1.Provider, err error) {
@@ -330,6 +332,44 @@ func (s *service) GetStorageContractsChecks(ctx context.Context, req v1.Contract
 	}
 
 	return reasons, nil
+}
+
+func (s *service) GetContractBags(ctx context.Context, req v1.ContractBagsRequest) ([]v1.ContractBag, int, error) {
+	log := s.logger.With(slog.String("method", "GetContractBags"))
+
+	limit := req.Limit
+	if limit <= 0 || limit > maxProvidersLimit {
+		limit = maxProvidersLimit
+	}
+	offset := req.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	dbContracts, total, err := s.providers.GetContractBags(ctx, req.Provider, limit, offset)
+	if err != nil {
+		log.Error("failed to get contract bags", slog.String("error", err.Error()))
+		return nil, 0, models.NewAppError(models.InternalServerErrorCode, "")
+	}
+
+	contracts := make([]v1.ContractBag, 0, len(dbContracts))
+	for _, c := range dbContracts {
+		bag := v1.ContractBag{
+			Address:        c.Address,
+			ProviderPubKey: c.ProviderPublicKey,
+			BagID:          c.BagID,
+			OwnerAddress:   c.OwnerAddress,
+			Size:           c.Size,
+			Reason:         c.Reason,
+		}
+		if c.ReasonTimestamp != nil {
+			ts := c.ReasonTimestamp.Unix()
+			bag.ReasonTimestamp = &ts
+		}
+		contracts = append(contracts, bag)
+	}
+
+	return contracts, total, nil
 }
 
 func NewService(

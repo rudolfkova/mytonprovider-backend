@@ -294,3 +294,24 @@ type ContractCheck struct {
 type ContractsStatusesResponse struct {
 	Contracts []ContractCheck `json:"contracts"`
 }
+
+type ContractBagsRequest struct {
+	Provider string `json:"provider,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
+	Offset   int    `json:"offset,omitempty"`
+}
+
+type ContractBag struct {
+	Address         string  `json:"address"`
+	ProviderPubKey  string  `json:"provider_pubkey"`
+	BagID           string  `json:"bag_id"`
+	OwnerAddress    string  `json:"owner_address"`
+	Size            uint64  `json:"size"`
+	Reason          *uint32 `json:"reason"`
+	ReasonTimestamp *int64  `json:"reason_timestamp"`
+}
+
+type ContractBagsResponse struct {
+	Contracts []ContractBag `json:"contracts"`
+	Total     int           `json:"total"`
+}

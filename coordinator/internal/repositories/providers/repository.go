@@ -29,6 +29,7 @@ type Repository interface {
 	AddStorageContracts(ctx context.Context, contracts []db.StorageContract) (err error)
 	UpdateStatuses(ctx context.Context) (err error)
 	GetStorageContractsChecks(ctx context.Context, contracts []string) (resp []db.ContractCheck, err error)
+	GetContractBags(ctx context.Context, pubkey string, limit, offset int) (contracts []db.ContractBag, total int, err error)
 	UpdateContractProofsChecks(ctx context.Context, contractsProofs []db.ContractProofsCheck) (err error)
 	GetStorageContracts(ctx context.Context) (contracts []db.ContractToProviderRelation, err error)
 	UpdateRejectedStorageContracts(ctx context.Context, storageContracts []db.ContractToProviderRelation) (err error)
@@ -750,6 +751,50 @@ func (r *repository) GetStorageContractsChecks(ctx context.Context, contracts []
 			return
 		}
 		resp = append(resp, contract)
+	}
+
+	err = rows.Err()
+	return
+}
+
+func (r *repository) GetContractBags(ctx context.Context, pubkey string, limit, offset int) (contracts []db.ContractBag, total int, err error) {
+	where := ""
+	args := []any{limit, offset}
+
+	if pubkey != "" {
+		where = "WHERE lower(p.public_key) = lower($3)"
+		args = append(args, pubkey)
+	}
+
+	query := fmt.Sprintf(`
+		SELECT
+			sc.address,
+			p.public_key,
+			sc.bag_id,
+			sc.owner_address,
+			sc.size,
+			sc.reason,
+			sc.reason_timestamp,
+			COUNT(*) OVER() AS total
+		FROM providers.storage_contracts sc
+			JOIN providers.providers p ON p.address = sc.provider_address
+		%s
+		ORDER BY sc.bag_id
+		LIMIT $1 OFFSET $2;`, where)
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var c db.ContractBag
+		if rErr := rows.Scan(&c.Address, &c.ProviderPublicKey, &c.BagID, &c.OwnerAddress, &c.Size, &c.Reason, &c.ReasonTimestamp, &total); rErr != nil {
+			err = rErr
+			return
+		}
+		contracts = append(contracts, c)
 	}
 
 	err = rows.Err()

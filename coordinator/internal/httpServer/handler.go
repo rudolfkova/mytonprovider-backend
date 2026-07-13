@@ -19,6 +19,7 @@ type providers interface {
 	UpdateTelemetry(ctx context.Context, telemetry v1.TelemetryRequest, rawBody []byte) (err error)
 	UpdateBenchmarks(ctx context.Context, benchmark v1.BenchmarksRequest) (err error)
 	GetStorageContractsChecks(ctx context.Context, req v1.ContractsStatusesRequest) ([]v1.ContractCheck, error)
+	GetContractBags(ctx context.Context, req v1.ContractBagsRequest) ([]v1.ContractBag, int, error)
 }
 
 type errorResponse struct {

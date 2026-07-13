@@ -98,6 +98,10 @@ func (c *cacheMiddleware) GetStorageContractsChecks(ctx context.Context, req v1.
 	return c.svc.GetStorageContractsChecks(ctx, req)
 }
 
+func (c *cacheMiddleware) GetContractBags(ctx context.Context, req v1.ContractBagsRequest) ([]v1.ContractBag, int, error) {
+	return c.svc.GetContractBags(ctx, req)
+}
+
 func (c *cacheMiddleware) actualFiltersRange(ctx context.Context) (filtersRange v1.FiltersRangeResp, err error) {
 	filtersRange, err = c.svc.GetFiltersRange(ctx)
 	if err != nil {
