@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"math"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -337,14 +338,12 @@ func (c *Checker) checkPiece(
 		return reason.InvalidHeader, fmt.Sprintf("stage=load_torrent_info_cell error=%s", err.Error())
 	}
 
-	pieceID := int32(1)
-	var piecesCount int32
-	if info.PieceSize != 0 {
-		piecesCount = int32(info.FileSize / uint64(info.PieceSize))
+	piecesCount, err := piecesCount(info)
+	if err != nil {
+		log.Debug("invalid torrent info sizes", "error", err)
+		return reason.InvalidHeader, fmt.Sprintf("stage=validate_torrent_info file_size=%d piece_size=%d error=%s", info.FileSize, info.PieceSize, err.Error())
 	}
-	if piecesCount != 0 {
-		pieceID = rand.Int31n(piecesCount)
-	}
+	pieceID := rand.Int31n(piecesCount)
 
 	if time.Since(est) > 5*time.Second {
 		peer.Reinit()
@@ -379,6 +378,22 @@ func (c *Checker) checkPiece(
 	}
 
 	return reason.ValidStorageProof, ""
+}
+
+func piecesCount(info tonstorage.TorrentInfo) (int32, error) {
+	if info.PieceSize == 0 || info.FileSize == 0 {
+		return 0, fmt.Errorf("file size %d and piece size %d must both be non-zero", info.FileSize, info.PieceSize)
+	}
+
+	count := info.FileSize / uint64(info.PieceSize)
+	if info.FileSize%uint64(info.PieceSize) != 0 {
+		count++
+	}
+	if count > math.MaxInt32 {
+		return 0, fmt.Errorf("pieces count %d is not addressable by storage.getPiece", count)
+	}
+
+	return int32(count), nil
 }
 
 func (s *peerPingState) shouldProbe(now time.Time) bool {
