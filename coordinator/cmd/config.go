@@ -25,6 +25,8 @@ type System struct {
 	EndpointStaleTTLMinutes            int `env:"COORDINATOR_ENDPOINT_STALE_TTL_MINUTES" envDefault:"720"`
 	EndpointFullRefreshIntervalMinutes int `env:"COORDINATOR_ENDPOINT_FULL_REFRESH_INTERVAL_MINUTES" envDefault:"360"`
 	EndpointRefreshFailureSeconds      int `env:"COORDINATOR_ENDPOINT_REFRESH_FAILURE_INTERVAL_SECONDS" envDefault:"30"`
+	StoreProofIntervalMinutes          int `env:"COORDINATOR_STOREPROOF_INTERVAL_MINUTES" envDefault:"60"`
+	StoreProofRetryDelayMinutes        int `env:"COORDINATOR_STOREPROOF_RETRY_DELAY_MINUTES" envDefault:"15"`
 }
 
 type Metrics struct {

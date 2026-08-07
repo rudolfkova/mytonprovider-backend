@@ -60,6 +60,9 @@ const (
 	defaultEndpointStaleTTL                = 12 * time.Hour
 	defaultEndpointFullRefreshInterval     = 6 * time.Hour
 	defaultEndpointFullRefreshFailInterval = 30 * time.Second
+
+	defaultStoreProofInterval   = 60 * time.Minute
+	storeProofFailureInterval   = 15 * time.Second
 )
 
 type providers interface {
@@ -120,6 +123,11 @@ type EndpointRefreshConfig struct {
 	FailInterval        time.Duration
 }
 
+type StoreProofConfig struct {
+	Interval   time.Duration
+	RetryDelay time.Duration
+}
+
 type providersMasterWorker struct {
 	providers      providers
 	system         system
@@ -133,6 +141,7 @@ type providersMasterWorker struct {
 	batchSize      uint32
 	timeouts       RunChecksTimeouts
 	endpointCfg    EndpointRefreshConfig
+	storeProofCfg  StoreProofConfig
 	logger         *slog.Logger
 	lastIPsMu      sync.RWMutex
 	lastKnownIPs   map[string]db.ProviderIP
@@ -471,24 +480,32 @@ func (w *providersMasterWorker) CollectProvidersNewStorageContracts(ctx context.
 }
 
 func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.Duration, err error) {
-	const (
-		successInterval = 60 * time.Minute
-		failureInterval = 15 * time.Second
-	)
+	started := time.Now()
+	cycleInterval := w.storeProofCfg.Interval
+	if cycleInterval <= 0 {
+		cycleInterval = defaultStoreProofInterval
+	}
+	nextFullAt := started.Add(cycleInterval)
+	remain := func() time.Duration {
+		d := time.Until(nextFullAt)
+		if d < 0 {
+			return 0
+		}
+		return d
+	}
 
 	log := w.logger.With(slog.String("worker", "StoreProof"))
 	log.Debug("checking storage proofs")
 
-	interval = successInterval
+	interval = remain()
 
-	runID := fmt.Sprintf("storeproof-%d", time.Now().Unix())
+	runID := fmt.Sprintf("storeproof-%d", started.Unix())
 	recorder := pipelineevents.NewRecorder(w.providers, w.logger, runID, "StoreProof")
 
 	storageContracts, err := w.providers.GetStorageContracts(ctx)
 	if err != nil {
 		log.Error("failed to get storage contracts", "error", err)
-		interval = failureInterval
-
+		interval = storeProofFailureInterval
 		return
 	}
 
@@ -498,34 +515,169 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 
 	storageContracts, err = w.updateRejectedContracts(ctx, storageContracts)
 	if err != nil {
-		interval = failureInterval
+		interval = storeProofFailureInterval
 		return
 	}
 
 	availableProvidersIPs, err := w.updateProvidersIPs(ctx, storageContracts, recorder)
 	if err != nil {
-		interval = failureInterval
+		interval = storeProofFailureInterval
 		return
 	}
 
-	err = w.updateActiveContracts(ctx, storageContracts, availableProvidersIPs, recorder)
+	mainResults, err := w.runStoreProofChecks(ctx, runID, storageContracts, availableProvidersIPs, recorder)
 	if err != nil {
-		interval = failureInterval
+		interval = storeProofFailureInterval
 		recorder.Flush(ctx)
 		return
 	}
 
-	err = w.providers.UpdateStatuses(ctx)
-	if err != nil {
-		log.Error("failed to update provider statuses", "error", err)
-		interval = failureInterval
+	toCommit, pendingKeys := selectMainProofsCommit(mainResults)
+	if len(toCommit) > 0 {
+		if err = w.providers.UpdateContractProofsChecks(ctx, toCommit); err != nil {
+			log.Error("failed to update contract proofs checks after main pass", "error", err)
+			interval = storeProofFailureInterval
+			recorder.Flush(ctx)
+			return
+		}
+	}
+
+	if err = w.providers.UpdateStatuses(ctx); err != nil {
+		log.Error("failed to update provider statuses after main pass", "error", err)
+		interval = storeProofFailureInterval
 		recorder.Flush(ctx)
 		return
 	}
-
 	recorder.Flush(ctx)
 
+	log.Info(
+		"StoreProof main pass committed",
+		"committed", len(toCommit),
+		"pending_retry", len(pendingKeys),
+		"next_full_at", nextFullAt,
+	)
+
+	retryDelay := w.storeProofCfg.RetryDelay
+	retryDeadline := nextFullAt.Add(-storeProofRetryBuffer)
+
+	shouldRetry := len(pendingKeys) > 0 && retryDelay > 0 && time.Now().Before(retryDeadline)
+	if !shouldRetry {
+		if len(pendingKeys) > 0 {
+			finalCommit := selectFinalProofsCommit(mainResults, pendingKeys, nil)
+			if len(finalCommit) > 0 {
+				if err = w.providers.UpdateContractProofsChecks(ctx, finalCommit); err != nil {
+					log.Error("failed to commit deferred proof fails without retry", "error", err)
+					interval = storeProofFailureInterval
+					return
+				}
+				if err = w.providers.UpdateStatuses(ctx); err != nil {
+					log.Error("failed to update provider statuses after deferred commit", "error", err)
+					interval = storeProofFailureInterval
+					return
+				}
+			}
+			log.Info("StoreProof skipped retry, committed deferred fails", "count", len(finalCommit), "retry_delay", retryDelay)
+		}
+		interval = remain()
+		return
+	}
+
+	sleepUntil := time.Now().Add(retryDelay)
+	if sleepUntil.After(retryDeadline) {
+		sleepUntil = retryDeadline
+	}
+	if err = waitUntil(ctx, sleepUntil); err != nil {
+		finalCommit := selectFinalProofsCommit(mainResults, pendingKeys, nil)
+		if len(finalCommit) > 0 {
+			commitCtx := context.WithoutCancel(ctx)
+			if cErr := w.providers.UpdateContractProofsChecks(commitCtx, finalCommit); cErr != nil {
+				log.Error("failed to commit deferred proof fails after cancel", "error", cErr)
+			} else if sErr := w.providers.UpdateStatuses(commitCtx); sErr != nil {
+				log.Error("failed to update statuses after cancel", "error", sErr)
+			}
+		}
+		interval = remain()
+		return
+	}
+
+	if !time.Now().Before(retryDeadline) {
+		finalCommit := selectFinalProofsCommit(mainResults, pendingKeys, nil)
+		if len(finalCommit) > 0 {
+			if err = w.providers.UpdateContractProofsChecks(ctx, finalCommit); err != nil {
+				log.Error("failed to commit deferred proof fails after delay", "error", err)
+				interval = storeProofFailureInterval
+				return
+			}
+			if err = w.providers.UpdateStatuses(ctx); err != nil {
+				log.Error("failed to update provider statuses after delay", "error", err)
+				interval = storeProofFailureInterval
+				return
+			}
+		}
+		interval = remain()
+		return
+	}
+
+	pending := pendingContracts(storageContracts, pendingKeys)
+	retryRecorder := pipelineevents.NewRecorder(w.providers, w.logger, runID, "StoreProof")
+	refreshed, refreshErr := w.refreshProvidersEndpoints(ctx, pending, false, retryRecorder)
+	if refreshErr != nil {
+		log.Warn("force endpoint refresh before StoreProof retry failed", "error", refreshErr)
+	}
+	for pk, ip := range refreshed {
+		availableProvidersIPs[pk] = ip
+	}
+
+	retryCtx, cancelRetry := context.WithDeadline(ctx, retryDeadline)
+	defer cancelRetry()
+
+	retryResults, retryErr := w.runStoreProofChecks(retryCtx, runID+"-retry", pending, availableProvidersIPs, retryRecorder)
+	if retryErr != nil {
+		log.Warn("StoreProof retry RunChecks failed", "error", retryErr)
+		retryResults = nil
+	}
+
+	finalCommit := selectFinalProofsCommit(mainResults, pendingKeys, retryResults)
+	if len(finalCommit) > 0 {
+		if err = w.providers.UpdateContractProofsChecks(ctx, finalCommit); err != nil {
+			log.Error("failed to update contract proofs checks after retry", "error", err)
+			interval = storeProofFailureInterval
+			retryRecorder.Flush(ctx)
+			return
+		}
+	}
+	if err = w.providers.UpdateStatuses(ctx); err != nil {
+		log.Error("failed to update provider statuses after retry", "error", err)
+		interval = storeProofFailureInterval
+		retryRecorder.Flush(ctx)
+		return
+	}
+	retryRecorder.Flush(ctx)
+
+	log.Info(
+		"StoreProof retry pass committed",
+		"committed", len(finalCommit),
+		"pending_was", len(pendingKeys),
+		"retry_error", retryErr != nil,
+	)
+
+	interval = remain()
 	return
+}
+
+func waitUntil(ctx context.Context, until time.Time) error {
+	d := time.Until(until)
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 func (w *providersMasterWorker) UpdateUptime(ctx context.Context) (interval time.Duration, err error) {
@@ -634,14 +786,24 @@ func (w *providersMasterWorker) UpdateIPInfo(ctx context.Context) (interval time
 	return
 }
 
-// updateActiveContracts check storage proofs for all bags and update status for relations provider-contract
-func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP, recorder *pipelineevents.Recorder) (err error) {
-	log := w.logger.With(slog.String("worker", "StoreProof"), slog.String("function", "updateActiveContracts"))
+// runStoreProofChecks fans out RunChecks to all agents, merges results, and records pipeline events.
+// It does not write public reason to the database.
+func (w *providersMasterWorker) runStoreProofChecks(
+	ctx context.Context,
+	jobID string,
+	storageContracts []db.ContractToProviderRelation,
+	availableProvidersIPs map[string]db.ProviderIP,
+	recorder *pipelineevents.Recorder,
+) (results map[string]mergedContractCheck, err error) {
+	log := w.logger.With(slog.String("worker", "StoreProof"), slog.String("function", "runStoreProofChecks"), slog.String("job_id", jobID))
 	if w.agentClient == nil || w.agentClient.AgentCount() == 0 {
-		return fmt.Errorf("no configured agent clients for RunChecks")
+		return nil, fmt.Errorf("no configured agent clients for RunChecks")
+	}
+	if len(storageContracts) == 0 {
+		return map[string]mergedContractCheck{}, nil
 	}
 
-	req, providerCount, checkedKeys := w.buildRunChecksRPCRequest(storageContracts, availableProvidersIPs)
+	req, providerCount, checkedKeys := w.buildRunChecksRPCRequest(jobID, storageContracts, availableProvidersIPs)
 	if providerCount == 0 {
 		if recorder != nil {
 			for _, sc := range storageContracts {
@@ -650,7 +812,9 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 				}
 			}
 		}
-		return fmt.Errorf("no providers with resolved endpoints for RunChecks")
+		results = buildBagCheckResults(storageContracts, checkedKeys, nil)
+		log.Warn("no providers with resolved endpoints for RunChecks", "contracts", len(storageContracts))
+		return results, nil
 	}
 
 	responses, callErrs := w.agentClient.RunChecksAll(ctx, req)
@@ -658,47 +822,32 @@ func (w *providersMasterWorker) updateActiveContracts(ctx context.Context, stora
 		log.Warn("RunChecks failed for agent", "endpoint", callErr.Endpoint, "error", callErr.Err)
 	}
 	if len(responses) == 0 {
-		return fmt.Errorf("all agents are unavailable for RunChecks")
+		return nil, fmt.Errorf("all agents are unavailable for RunChecks")
 	}
 
 	merged, valid := mergeRunChecksResponses(storageContracts, responses)
+	results = buildBagCheckResults(storageContracts, checkedKeys, merged)
 
 	if recorder != nil {
 		for _, sc := range storageContracts {
 			key := contractRelationKey(sc)
-			if _, inBatch := checkedKeys[key]; !inBatch {
-				recorder.RecordBagEndpointUnresolved(sc)
-				continue
-			}
-			row, ok := merged[key]
+			row, ok := results[key]
 			if !ok {
-				recorder.RecordBagTransition(sc, constants.NotFound, pipelineevents.StageAgentRunChecksNoResult, "agent did not return result for contract")
 				continue
 			}
 			recorder.RecordBagTransition(sc, row.Reason, row.Stage, row.Details)
 		}
 	}
 
-	contractProofsChecks := make([]db.ContractProofsCheck, 0, len(merged))
-	for _, row := range merged {
-		contractProofsChecks = append(contractProofsChecks, row.ContractProofsCheck)
-	}
-
-	err = w.providers.UpdateContractProofsChecks(ctx, contractProofsChecks)
-	if err != nil {
-		log.Error("failed to update contract proofs checks", "error", err)
-		return
-	}
-
 	log.Info(
-		"successfully updated contract proofs checks",
-		"count", len(contractProofsChecks),
+		"RunChecks merge completed",
+		"results", len(results),
 		"valid", valid,
 		"agents_total", w.agentClient.AgentCount(),
 		"agents_successful", len(responses),
 	)
 
-	return nil
+	return results, nil
 }
 
 type mergedContractCheck struct {
@@ -711,7 +860,7 @@ func contractRelationKey(sc db.ContractToProviderRelation) string {
 	return sc.ProviderAddress + "|" + sc.Address
 }
 
-func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (*providerchecksv1.RunChecksRequest, int, map[string]struct{}) {
+func (w *providersMasterWorker) buildRunChecksRPCRequest(jobID string, storageContracts []db.ContractToProviderRelation, availableProvidersIPs map[string]db.ProviderIP) (*providerchecksv1.RunChecksRequest, int, map[string]struct{}) {
 	providersContracts := make(map[string][]db.ContractToProviderRelation)
 	for _, sc := range storageContracts {
 		providersContracts[sc.ProviderPublicKey] = append(providersContracts[sc.ProviderPublicKey], sc)
@@ -744,8 +893,12 @@ func (w *providersMasterWorker) buildRunChecksRPCRequest(storageContracts []db.C
 		})
 	}
 
+	if strings.TrimSpace(jobID) == "" {
+		jobID = fmt.Sprintf("storeproof-%d", time.Now().Unix())
+	}
+
 	return &providerchecksv1.RunChecksRequest{
-		JobId:     fmt.Sprintf("storeproof-%d", time.Now().Unix()),
+		JobId:     jobID,
 		Providers: providers,
 		Timeouts: &providerchecksv1.CheckTimeouts{
 			PingMs:  w.timeouts.PingMs,
@@ -1431,6 +1584,7 @@ func NewWorker(
 	batchSize uint32,
 	timeouts RunChecksTimeouts,
 	endpointCfg EndpointRefreshConfig,
+	storeProofCfg StoreProofConfig,
 	logger *slog.Logger,
 ) Worker {
 	_, prv, err := ed25519.GenerateKey(nil)
@@ -1448,6 +1602,9 @@ func NewWorker(
 	if endpointCfg.FailInterval <= 0 {
 		endpointCfg.FailInterval = defaultEndpointFullRefreshFailInterval
 	}
+	if storeProofCfg.Interval <= 0 {
+		storeProofCfg.Interval = defaultStoreProofInterval
+	}
 
 	return &providersMasterWorker{
 		providers:      providers,
@@ -1462,6 +1619,7 @@ func NewWorker(
 		batchSize:      batchSize,
 		timeouts:       timeouts,
 		endpointCfg:    endpointCfg,
+		storeProofCfg:  storeProofCfg,
 		logger:         logger,
 		lastKnownIPs:   make(map[string]db.ProviderIP),
 	}

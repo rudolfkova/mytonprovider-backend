@@ -99,6 +99,38 @@ nano coordinator/deploy/.env
 
 Пока агентов нет: `AGENT_ENDPOINTS=` (пусто). После подключения агентов — Tailscale IP или публичный IP, тот же, что в SAN сертификата.
 
+### StoreProof: тайминги
+
+Воркер `StoreProof` якорит полный цикл от **старта** прогона: `nextFullAt = start + INTERVAL`. Ретрай failed bags живёт внутри этого окна; в конце воркер спит только **остаток** до `nextFullAt` (не свежий час после ретрая).
+
+| Переменная | Дефолт | Смысл |
+|------------|--------|--------|
+| `COORDINATOR_STOREPROOF_INTERVAL_MINUTES` | `60` | Длина полного цикла от старта `StoreProof` |
+| `COORDINATOR_STOREPROOF_RETRY_DELAY_MINUTES` | `15` | Пауза после основного прогона до одного ретрая. `0` = ретрай выключен (fail’ы основного коммитятся сразу) |
+| `COORDINATOR_RUNCHECKS_TOTAL_MS` | `1200000` (20 мин) | Бюджет агента на сами proof-check’ы в одном `RunChecks` |
+| `AGENT_RPC_TIMEOUT_MS` | см. `.env` | Потолок ожидания gRPC ответа агента. Должен быть **≥** `RUNCHECKS_TOTAL_MS` и не съедать окно ретрая |
+
+Хардкод: за **5 минут** до `nextFullAt` ретрай обязан остановиться (buffer на подготовку к следующему полному прогону).
+
+**Формула окна ретрая (worst case):**
+
+```text
+retryWindow ≈ INTERVAL - mainDuration - RETRY_DELAY - 5m
+```
+
+Пример как на проде (INTERVAL=60, TotalMs≈20m, delay=15m):
+
+```text
+0 ........ 20m .............. 35m ................. 55m .... 60m
+|--- main ---|---- delay ----|---- retry ≤20m ----|-buf-| next
+```
+
+Если основной прогон закончился раньше 20m — delay стартует раньше, окно ретрая больше.
+
+**Важно:** если `AGENT_RPC_TIMEOUT_MS` сильно больше `COORDINATOR_RUNCHECKS_TOTAL_MS` (например 50m vs 20m), зависший/медленный gRPC может съесть delay и ретрай. Держите RPC timeout около TotalMs + небольшой запас (например 25m при TotalMs=20m).
+
+Поведение записи в БД: успехи и «мёртвые» ошибки пишутся сразу; транзиентные fail’ы откладываются до ретрая (или коммитятся, если ретрай скипнут/`RETRY_DELAY=0`). Pipeline events пишутся сразу честно для отладки.
+
 ### Секреты
 
 См. [secrets/README.ru.md](secrets/README.ru.md):

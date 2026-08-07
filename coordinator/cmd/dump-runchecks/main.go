@@ -144,6 +144,7 @@ func run() error {
 					StorageRatesQueryMs: uint32(ratesQueryTimeoutMS),
 				},
 				providersmaster.EndpointRefreshConfig{},
+				providersmaster.StoreProofConfig{},
 				logger,
 			)
 			if worker == nil {

@@ -183,6 +183,10 @@ func run() (err error) {
 			FullRefreshInterval: time.Duration(config.System.EndpointFullRefreshIntervalMinutes) * time.Minute,
 			FailInterval:        time.Duration(config.System.EndpointRefreshFailureSeconds) * time.Second,
 		},
+		providersmaster.StoreProofConfig{
+			Interval:   time.Duration(config.System.StoreProofIntervalMinutes) * time.Minute,
+			RetryDelay: time.Duration(config.System.StoreProofRetryDelayMinutes) * time.Minute,
+		},
 		logger,
 	)
 	providersMasterWorker = providersmaster.NewMetrics(workersRunCount, workersRunDuration, providersMasterWorker)
