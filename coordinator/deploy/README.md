@@ -147,7 +147,32 @@ task coordinator:deploy:down
 
 Put coordinator and agents in the same tailnet. Use agent **Tailscale IPv4** in `AGENT_ENDPOINTS` (`100.x.x.x:8443`) and the same IP in each agent cert SAN.
 
-## Frontend (nginx)
+## Frontend (separate deploy)
+
+The catalog UI lives in [mytonprovider-frontend](https://github.com/mytonprovider/mytonprovider-frontend) and is deployed independently from coordinator.
+
+**DNS:** point `api.mytonprovider.org` to the VPS (same host as coordinator). Coordinator listens on `${COORDINATOR_PORT:-8080}`.
+
+**CORS:** in `.env.hub` set the frontend origin so the browser can call the API from another subdomain:
+
+```env
+CORS_ALLOWED_ORIGINS=https://mytonprovider.org
+```
+
+**Frontend image** (built in the frontend repo with `VITE_API_URL=https://api.mytonprovider.org/api/v1`):
+
+```bash
+task hub:init   # in mytonprovider-frontend
+task hub:up
+```
+
+TLS for `mytonprovider.org` and `api.mytonprovider.org` is configured outside this stack (Cloudflare, certbot, etc.).
+
+### Legacy frontend (nginx on host)
+
+`task coordinator:deploy:frontend` still deploys the old Next.js app via host nginx + static build. Prefer the Docker Hub flow above for the new frontend.
+
+## Frontend (nginx, legacy)
 
 **By public IP (no Let's Encrypt):**
 

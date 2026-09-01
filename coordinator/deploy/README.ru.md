@@ -199,7 +199,32 @@ nc -zv <agent-ip> 8443
 
 Публичный IP агента в endpoints при сертификате только на Tailscale IP — TLS handshake не пройдёт.
 
-## Фронт (nginx)
+## Фронт (отдельный деплой)
+
+Каталог — репозиторий [mytonprovider-frontend](https://github.com/mytonprovider/mytonprovider-frontend), поднимается **отдельно** от coordinator.
+
+**DNS:** `api.mytonprovider.org` → VPS (тот же хост, что и coordinator). API слушает `${COORDINATOR_PORT:-8080}`.
+
+**CORS** в `.env.hub` — origin фронта (браузер ходит с другого поддомена):
+
+```env
+CORS_ALLOWED_ORIGINS=https://mytonprovider.org
+```
+
+**Фронт** (образ собирается с `VITE_API_URL=https://api.mytonprovider.org/api/v1`):
+
+```bash
+task hub:init   # в mytonprovider-frontend
+task hub:up
+```
+
+TLS для `mytonprovider.org` и `api.mytonprovider.org` — снаружи стека (Cloudflare, certbot и т.д.).
+
+### Старый фронт (nginx на хосте)
+
+`task coordinator:deploy:frontend` — legacy Next.js через host nginx. Для нового фронта используйте Docker Hub flow выше.
+
+## Фронт (nginx, legacy)
 
 После запущенного coordinator, на **той же VPS**:
 

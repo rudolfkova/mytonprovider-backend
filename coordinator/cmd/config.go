@@ -27,6 +27,7 @@ type System struct {
 	EndpointRefreshFailureSeconds      int `env:"COORDINATOR_ENDPOINT_REFRESH_FAILURE_INTERVAL_SECONDS" envDefault:"30"`
 	StoreProofIntervalMinutes          int `env:"COORDINATOR_STOREPROOF_INTERVAL_MINUTES" envDefault:"60"`
 	StoreProofRetryDelayMinutes        int `env:"COORDINATOR_STOREPROOF_RETRY_DELAY_MINUTES" envDefault:"15"`
+	CORSAllowedOrigins                 string `env:"CORS_ALLOWED_ORIGINS" envDefault:""`
 }
 
 type Metrics struct {

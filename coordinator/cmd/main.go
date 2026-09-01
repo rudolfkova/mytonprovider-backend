@@ -210,6 +210,7 @@ func run() (err error) {
 
 	// HTTP Server
 	accessTokens := strings.Split(config.System.AccessTokens, ",")
+	corsOrigins := parseCSV(config.System.CORSAllowedOrigins)
 	app := fiber.New(fiber.Config{
 		ProxyHeader: "X-Real-IP",
 	})
@@ -217,6 +218,7 @@ func run() (err error) {
 		app,
 		providersSvc,
 		accessTokens,
+		corsOrigins,
 		config.Metrics.Namespace,
 		config.Metrics.ServerSubsystem,
 		logger,
@@ -243,4 +245,15 @@ func run() (err error) {
 	}
 
 	return err
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if origin := strings.TrimSpace(part); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }

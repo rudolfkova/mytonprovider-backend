@@ -27,18 +27,20 @@ type errorResponse struct {
 }
 
 type handler struct {
-	server       *fiber.App
-	logger       *slog.Logger
-	providers    providers
-	namespace    string
-	subsystem    string
-	accessTokens map[string]struct{}
+	server            *fiber.App
+	logger            *slog.Logger
+	providers         providers
+	namespace         string
+	subsystem         string
+	accessTokens      map[string]struct{}
+	corsAllowedOrigins []string
 }
 
 func New(
 	server *fiber.App,
 	providers providers,
 	accessTokens []string,
+	corsAllowedOrigins []string,
 	namespace string,
 	subsystem string,
 	logger *slog.Logger,
@@ -54,12 +56,13 @@ func New(
 	}
 
 	h := &handler{
-		server:       server,
-		providers:    providers,
-		namespace:    namespace,
-		subsystem:    subsystem,
-		accessTokens: accessTokensMap,
-		logger:       logger,
+		server:             server,
+		providers:          providers,
+		namespace:          namespace,
+		subsystem:          subsystem,
+		accessTokens:       accessTokensMap,
+		corsAllowedOrigins: corsAllowedOrigins,
+		logger:             logger,
 	}
 
 	return h

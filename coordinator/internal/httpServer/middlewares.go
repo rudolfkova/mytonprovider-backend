@@ -6,7 +6,16 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 )
+
+func corsMiddleware(origins []string) fiber.Handler {
+	return cors.New(cors.Config{
+		AllowOrigins: strings.Join(origins, ","),
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders: "*",
+	})
+}
 
 func (h *handler) authorizationMiddleware(c *fiber.Ctx) error {
 	accessToken := c.Get("Authorization")
