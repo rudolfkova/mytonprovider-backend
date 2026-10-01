@@ -183,6 +183,10 @@ func run() (err error) {
 			FullRefreshInterval: time.Duration(config.System.EndpointFullRefreshIntervalMinutes) * time.Minute,
 			FailInterval:        time.Duration(config.System.EndpointRefreshFailureSeconds) * time.Second,
 		},
+		providersmaster.StoreProofConfig{
+			Interval:   time.Duration(config.System.StoreProofIntervalMinutes) * time.Minute,
+			RetryDelay: time.Duration(config.System.StoreProofRetryDelayMinutes) * time.Minute,
+		},
 		logger,
 	)
 	providersMasterWorker = providersmaster.NewMetrics(workersRunCount, workersRunDuration, providersMasterWorker)
@@ -206,6 +210,7 @@ func run() (err error) {
 
 	// HTTP Server
 	accessTokens := strings.Split(config.System.AccessTokens, ",")
+	corsOrigins := parseCSV(config.System.CORSAllowedOrigins)
 	app := fiber.New(fiber.Config{
 		ProxyHeader: "X-Real-IP",
 	})
@@ -213,6 +218,7 @@ func run() (err error) {
 		app,
 		providersSvc,
 		accessTokens,
+		corsOrigins,
 		config.Metrics.Namespace,
 		config.Metrics.ServerSubsystem,
 		logger,
@@ -239,4 +245,15 @@ func run() (err error) {
 	}
 
 	return err
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	origins := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if origin := strings.TrimSpace(part); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	return origins
 }

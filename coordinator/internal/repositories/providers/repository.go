@@ -548,7 +548,7 @@ func (r *repository) UpdateRating(ctx context.Context) (err error) {
 		SET rating = (
 		(
 			(
-				0.0001 * EXTRACT(EPOCH FROM pr.registered_at) +
+				0.0001 * (2 * EXTRACT(EPOCH FROM NOW()) - EXTRACT(EPOCH FROM pr.registered_at)) +
 				0.00002 * (COALESCE(pr.max_span, 0) - COALESCE(pr.min_span, 0)) +
 				0.00000000008 * COALESCE(pr.max_bag_size_bytes, 0) +
 				0.000000004 * COALESCE(pr.total_provider_space, 0) +

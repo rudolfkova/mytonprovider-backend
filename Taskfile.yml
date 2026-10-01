@@ -379,6 +379,41 @@ tasks:
     cmds:
       - docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.yml logs -f
 
+  agent:hub:runchecks:
+    desc: Summarize RunChecks completed lines from agent container logs (hub or hub.stack)
+    cmds:
+      - |
+        set -euo pipefail
+        if ! command -v python3 >/dev/null 2>&1; then
+          echo "python3 is required"
+          exit 1
+        fi
+        CID="$(docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.yml ps -q agent 2>/dev/null || true)"
+        if [ -z "${CID}" ]; then
+          CID="$(docker compose --env-file agent/deploy/.env.hub -f agent/deploy/docker-compose.hub.stack.yml ps -q agent 2>/dev/null || true)"
+        fi
+        if [ -z "${CID}" ]; then
+          echo "No running agent container (tried docker-compose.hub.yml and docker-compose.hub.stack.yml)"
+          exit 1
+        fi
+        docker logs "${CID}" 2>&1 \
+          | (grep 'RunChecks completed' || true) \
+          | python3 -c '
+        import sys, json
+        for line in sys.stdin:
+            o = json.loads(line)
+            rc = o.get("reason_counts") or {}
+            print(
+                o.get("time"),
+                o.get("job_id"),
+                "valid=%s" % rc.get("VALID_STORAGE_PROOF", 0),
+                "ping=%s" % rc.get("PING_FAILED", 0),
+                "piece=%s" % rc.get("CANT_GET_PIECE", 0),
+                "unavail=%s" % rc.get("UNAVAILABLE_PROVIDER", 0),
+                "dur_ms=%s" % o.get("duration_ms"),
+            )
+        '
+
   agent:hub:stack:up:
     desc: Pull and start agent + monitoring stack from Docker Hub image (no local build)
     cmds:

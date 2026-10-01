@@ -17,6 +17,10 @@ const (
 func (h *handler) RegisterRoutes() {
 	h.logger.Info("Registering routes")
 
+	if len(h.corsAllowedOrigins) > 0 {
+		h.server.Use(corsMiddleware(h.corsAllowedOrigins))
+	}
+
 	m := newMetrics(h.namespace, h.subsystem)
 
 	h.server.Use(m.metricsMiddleware)

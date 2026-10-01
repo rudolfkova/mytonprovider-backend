@@ -81,6 +81,38 @@ nano coordinator/deploy/.env
 
 Until agents exist: `AGENT_ENDPOINTS=` (empty). After agents join, use Tailscale or public IP consistent with cert SAN.
 
+### StoreProof timings
+
+`StoreProof` anchors the full cycle from **start**: `nextFullAt = start + INTERVAL`. One retry of failed bags runs inside that window; when finished, the worker sleeps only the **remaining** time until `nextFullAt` (not a fresh hour after retry).
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `COORDINATOR_STOREPROOF_INTERVAL_MINUTES` | `60` | Full cycle length from `StoreProof` start |
+| `COORDINATOR_STOREPROOF_RETRY_DELAY_MINUTES` | `15` | Wait after the main pass before one retry. `0` disables retry (main-pass fails are committed immediately) |
+| `COORDINATOR_RUNCHECKS_TOTAL_MS` | `1200000` (20m) | Per-agent budget for proof checks in one `RunChecks` |
+| `AGENT_RPC_TIMEOUT_MS` | see `.env` | gRPC wait ceiling. Must be **≥** `RUNCHECKS_TOTAL_MS` and must not eat the retry window |
+
+Hardcoded: retry must stop **5 minutes** before `nextFullAt` (buffer for the next full run).
+
+**Retry window (worst case):**
+
+```text
+retryWindow ≈ INTERVAL - mainDuration - RETRY_DELAY - 5m
+```
+
+Example (INTERVAL=60, TotalMs≈20m, delay=15m):
+
+```text
+0 ........ 20m .............. 35m ................. 55m .... 60m
+|--- main ---|---- delay ----|---- retry ≤20m ----|-buf-| next
+```
+
+If the main pass finishes earlier than 20m, delay starts earlier and the retry window is larger.
+
+**Important:** if `AGENT_RPC_TIMEOUT_MS` is much larger than `COORDINATOR_RUNCHECKS_TOTAL_MS` (e.g. 50m vs 20m), a slow/hung RPC can consume the delay and retry window. Keep RPC timeout near TotalMs plus a small margin (e.g. 25m when TotalMs=20m).
+
+DB write policy: successes and non-retriable errors are written immediately; transient fails are deferred until retry (or committed if retry is skipped / `RETRY_DELAY=0`). Pipeline events are recorded immediately for debugging.
+
 ### Secrets
 
 See [secrets/README.md](secrets/README.md). Issue certs on the coordinator host; full steps in [agent/README.md](../../agent/README.md).
@@ -115,7 +147,32 @@ task coordinator:deploy:down
 
 Put coordinator and agents in the same tailnet. Use agent **Tailscale IPv4** in `AGENT_ENDPOINTS` (`100.x.x.x:8443`) and the same IP in each agent cert SAN.
 
-## Frontend (nginx)
+## Frontend (separate deploy)
+
+The catalog UI lives in [mytonprovider-frontend](https://github.com/mytonprovider/mytonprovider-frontend) and is deployed independently from coordinator.
+
+**DNS:** point `api.mytonprovider.org` to the VPS (same host as coordinator). Coordinator listens on `${COORDINATOR_PORT:-8080}`.
+
+**CORS:** in `.env.hub` set the frontend origin so the browser can call the API from another subdomain:
+
+```env
+CORS_ALLOWED_ORIGINS=https://mytonprovider.org
+```
+
+**Frontend image** (built in the frontend repo with `VITE_API_URL=https://api.mytonprovider.org/api/v1`):
+
+```bash
+task hub:init   # in mytonprovider-frontend
+task hub:up
+```
+
+TLS for `mytonprovider.org` and `api.mytonprovider.org` is configured outside this stack (Cloudflare, certbot, etc.).
+
+### Legacy frontend (nginx on host)
+
+`task coordinator:deploy:frontend` still deploys the old Next.js app via host nginx + static build. Prefer the Docker Hub flow above for the new frontend.
+
+## Frontend (nginx, legacy)
 
 **By public IP (no Let's Encrypt):**
 
