@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -23,6 +24,7 @@ import (
 	"github.com/xssnick/tonutils-go/tvm/cell"
 
 	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
+	"mytonprovider-agent/internal/metrics"
 	"mytonprovider-agent/internal/reason"
 	"mytonprovider-agent/internal/tonstorage"
 )
@@ -32,13 +34,24 @@ const (
 	defaultRLDPTimeout          = 2 * time.Second
 	skipFailureThresholdPercent = 20.0
 	pingCacheTTL                = 2 * time.Second
-	interBagDelay                = 100 * time.Millisecond
+	interBagDelay               = 100 * time.Millisecond
 )
+
+type Options struct {
+	MaxConcurrentProviders int
+	MaxConcurrentBags      int
+	PieceMinBPS            uint64
+	PieceTimeoutCap        time.Duration
+}
 
 type Checker struct {
 	logger                 *slog.Logger
 	prv                    ed25519.PrivateKey
 	maxConcurrentProviders int
+	maxConcurrentBags      int
+	pieceMinBPS            uint64
+	pieceTimeoutCap        time.Duration
+	pieces                 *pieceLimit
 }
 
 type jobProgress struct {
@@ -50,19 +63,54 @@ type jobProgress struct {
 }
 
 type peerPingState struct {
+	mu            sync.Mutex
 	lastSuccessAt time.Time
 }
 
-func New(maxConcurrentProviders int, logger *slog.Logger) (*Checker, error) {
+type failureTally struct {
+	mu          sync.Mutex
+	failsInARow uint32
+	threshold   uint32
+	stopped     bool
+	stats       map[reason.Code]int
+	details     map[string]int
+}
+
+func New(opts Options, logger *slog.Logger) (*Checker, error) {
 	_, prv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil, err
+	}
+	if opts.MaxConcurrentProviders < 1 {
+		opts.MaxConcurrentProviders = 40
+	}
+	if opts.MaxConcurrentBags < 1 {
+		opts.MaxConcurrentBags = 4
+	}
+
+	ceiling := opts.MaxConcurrentProviders * opts.MaxConcurrentBags
+	floor := aimdMinLimit
+	if floor > ceiling {
+		floor = ceiling
+	}
+	initial := opts.MaxConcurrentProviders
+	if initial > ceiling {
+		initial = ceiling
+	}
+	if initial < floor {
+		initial = floor
 	}
 
 	return &Checker{
 		logger:                 logger,
 		prv:                    prv,
-		maxConcurrentProviders: maxConcurrentProviders,
+		maxConcurrentProviders: opts.MaxConcurrentProviders,
+		maxConcurrentBags:      opts.MaxConcurrentBags,
+		pieceMinBPS:            opts.PieceMinBPS,
+		pieceTimeoutCap:        opts.PieceTimeoutCap,
+		pieces: newPieceLimit(floor, ceiling, initial, aimdWindow, func(n int) {
+			metrics.SetPieceLimit(n)
+		}, logger),
 	}, nil
 }
 
@@ -146,13 +194,12 @@ func (c *Checker) checkProviderFiles(
 		return nil
 	}
 
-	stats := make(map[reason.Code]int)
-	detailsStats := make(map[string]int)
-	results := make([]*providerchecksv1.ContractCheckResult, 0, len(contracts))
-
 	// Keep the same dead-provider short-circuit as the old coordinator.
-	maxFailureThreshold := uint32(float32(len(contracts)) / 100.0 * skipFailureThresholdPercent)
-	var failsInARow uint32
+	tally := &failureTally{
+		threshold: uint32(float32(len(contracts)) / 100.0 * skipFailureThresholdPercent),
+		stats:     make(map[reason.Code]int),
+		details:   make(map[string]int),
+	}
 
 	gw := adnl.NewGateway(c.prv)
 	defer gw.Close()
@@ -177,6 +224,8 @@ func (c *Checker) checkProviderFiles(
 		return results
 	}
 
+	peer.Reinit()
+
 	pingCtx, pingCancel := context.WithTimeout(ctx, timeoutFromMs(timeouts.GetPingMs(), defaultPingTimeout))
 	_, err = peer.Ping(pingCtx)
 	pingCancel()
@@ -192,65 +241,113 @@ func (c *Checker) checkProviderFiles(
 	rl := rldp.NewClientV2(peer)
 	defer rl.Close()
 	pingState := &peerPingState{lastSuccessAt: time.Now()}
+	gate := newPeerGate(peer.Reinit)
 
+	workers := c.maxConcurrentBags
+	pending := 0
 	for _, contract := range contracts {
+		if contract != nil {
+			pending++
+		}
+	}
+	if workers > pending {
+		workers = pending
+	}
+	if workers < 1 {
+		return nil
+	}
+
+	results := make([]*providerchecksv1.ContractCheckResult, len(contracts))
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				contract := contracts[i]
+				if tally.stoppedNow() {
+					recordSkip(provider, contract, tally, results, i, progress, log)
+					continue
+				}
+
+				pieceStarted := time.Now()
+				reasonCode, details := c.checkPiece(ctx, rl, gate, contract.GetBagId(), timeouts, pingState, log)
+				latency := uint32(time.Since(pieceStarted).Milliseconds())
+				results[i] = makeResult(provider, contract, reasonCode, latency, details)
+				if progress != nil {
+					progress.advance(1)
+				}
+				tally.record(reasonCode, details)
+				if reasonCode != reason.ValidStorageProof {
+					log.Warn(
+						"contract check failed",
+						"bag_id", contract.GetBagId(),
+						"contract_address", contract.GetContractAddress(),
+						"reason_code", reasonName(reasonCode),
+						"latency_ms", latency,
+						"details", details,
+					)
+				}
+
+				if !tally.stoppedNow() {
+					time.Sleep(interBagDelay)
+				}
+			}
+		}()
+	}
+
+	for i, contract := range contracts {
 		if contract == nil {
 			continue
 		}
-
-		if failsInARow > maxFailureThreshold {
-			details := fmt.Sprintf("stage=skip reason=too_many_consecutive_failures threshold=%d fails_in_a_row=%d", maxFailureThreshold, failsInARow)
-			results = append(results, makeResult(provider, contract, reason.UnavailableProvider, 0, details))
-			if progress != nil {
-				progress.advance(1)
-			}
-			log.Info("skip", "bag_id", contract.GetBagId(), "reason_code", reasonName(reason.UnavailableProvider), "details", details)
-			detailsStats[details]++
+		if tally.stoppedNow() {
+			recordSkip(provider, contract, tally, results, i, progress, log)
 			continue
 		}
-
-		pieceStarted := time.Now()
-		reasonCode, details := c.checkPiece(ctx, rl, contract.GetBagId(), timeouts, pingState, log)
-		latency := uint32(time.Since(pieceStarted).Milliseconds())
-
-		results = append(results, makeResult(provider, contract, reasonCode, latency, details))
-		if progress != nil {
-			progress.advance(1)
-		}
-		stats[reasonCode]++
-		if reasonCode != reason.ValidStorageProof {
-			detailsStats[details]++
-			log.Warn(
-				"contract check failed",
-				"bag_id", contract.GetBagId(),
-				"contract_address", contract.GetContractAddress(),
-				"reason_code", reasonName(reasonCode),
-				"latency_ms", latency,
-				"details", details,
-			)
-		}
-
-		if reasonCode == reason.ValidStorageProof {
-			failsInARow = 0
-		} else {
-			failsInARow++
-		}
-
-		// Keep a small pacing gap to reduce burst load.
-		time.Sleep(interBagDelay)
+		jobs <- i
 	}
+	close(jobs)
+	wg.Wait()
 
+	stats, detailsStats := tally.snapshot()
 	for reasonCode, count := range stats {
 		log.Debug("checked provider files", "reason", reasonName(reasonCode), "count", count)
 	}
 	log.Info("provider check summary", "contracts_total", len(contracts), "reason_counts", stats, "error_signatures", detailsStats)
 
-	return results
+	out := make([]*providerchecksv1.ContractCheckResult, 0, len(contracts))
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		out = append(out, result)
+	}
+	return out
+}
+
+func recordSkip(
+	provider *providerchecksv1.ProviderBatch,
+	contract *providerchecksv1.ContractRef,
+	tally *failureTally,
+	results []*providerchecksv1.ContractCheckResult,
+	i int,
+	progress *jobProgress,
+	log *slog.Logger,
+) {
+	details := tally.skipDetails()
+	results[i] = makeResult(provider, contract, reason.UnavailableProvider, 0, details)
+	tally.recordSkip(details)
+	if progress != nil {
+		progress.advance(1)
+	}
+	log.Info("skip", "bag_id", contract.GetBagId(), "reason_code", reasonName(reason.UnavailableProvider), "details", details)
 }
 
 func (c *Checker) checkPiece(
 	ctx context.Context,
 	rl *rldp.RLDP,
+	gate *peerGate,
 	bagID string,
 	timeouts *providerchecksv1.CheckTimeouts,
 	pingState *peerPingState,
@@ -267,10 +364,9 @@ func (c *Checker) checkPiece(
 		return reason.UnknownPeer, "stage=get_adnl_peer error=adnl peer cast failed"
 	}
 
-	// In case connection was lost.
-	peer.Reinit()
-	// Peer can be closed after some time, so for extra stability we reinit before each operation if needed.
-	est := time.Now()
+	var connClosed bool
+	gate.begin()
+	defer func() { gate.end(connClosed) }()
 
 	pingTimeout := timeoutFromMs(timeouts.GetPingMs(), defaultPingTimeout)
 	if pingState == nil || pingState.shouldProbe(time.Now()) {
@@ -281,6 +377,9 @@ func (c *Checker) checkPiece(
 			log.Debug("ping to provider failed", "error", err)
 			if pingState != nil {
 				pingState.invalidate()
+			}
+			if errors.Is(err, adnl.ErrPeerConnClosed) {
+				connClosed = true
 			}
 			return reason.PingFailed, fmt.Sprintf("stage=piece_ping timeout_ms=%d error=%s", pingTimeout.Milliseconds(), err.Error())
 		}
@@ -301,11 +400,6 @@ func (c *Checker) checkPiece(
 		return reason.InvalidBagID, fmt.Sprintf("stage=hash_overlay error=%s", err.Error())
 	}
 
-	if time.Since(est) > 5*time.Second {
-		peer.Reinit()
-		est = time.Now()
-	}
-
 	// Get torrent info.
 	var res tonstorage.TorrentInfoContainer
 	rldpTimeout := timeoutFromMs(timeouts.GetRldpMs(), defaultRLDPTimeout)
@@ -316,6 +410,9 @@ func (c *Checker) checkPiece(
 		log.Debug("failed to get torrent info from provider", "error", err)
 		if pingState != nil {
 			pingState.invalidate()
+		}
+		if errors.Is(err, adnl.ErrPeerConnClosed) {
+			connClosed = true
 		}
 		return reason.GetInfoFailed, fmt.Sprintf("stage=get_torrent_info timeout_ms=%d error=%s", rldpTimeout.Milliseconds(), err.Error())
 	}
@@ -345,21 +442,31 @@ func (c *Checker) checkPiece(
 	}
 	pieceID := rand.Int31n(piecesCount)
 
-	if time.Since(est) > 5*time.Second {
-		peer.Reinit()
-	}
-
 	// Get piece proof and validate.
+	pieceBudget := pieceTimeout(info.PieceSize, rldpTimeout, c.pieceMinBPS, c.pieceTimeoutCap)
+	if err = c.pieces.acquire(ctx); err != nil {
+		log.Debug("failed to acquire piece slot", "error", err)
+		return reason.CantGetPiece, fmt.Sprintf("stage=get_piece_slot piece_id=%d error=%s", pieceID, err.Error())
+	}
+	defer c.pieces.release()
+
 	var piece tonstorage.Piece
-	pieceCtx, cancelPiece := context.WithTimeout(ctx, rldpTimeout)
+	pieceStarted := time.Now()
+	pieceCtx, cancelPiece := context.WithTimeout(ctx, pieceBudget)
 	err = rl.DoQuery(pieceCtx, 32<<20, overlay.WrapQuery(over, &tonstorage.GetPiece{PieceID: pieceID}), &piece)
 	cancelPiece()
+	if ctx.Err() == nil && (err == nil || errors.Is(err, context.DeadlineExceeded)) {
+		c.pieces.observe(time.Since(pieceStarted), pieceBudget)
+	}
 	if err != nil {
 		log.Debug("failed to get piece from provider", "error", err)
 		if pingState != nil {
 			pingState.invalidate()
 		}
-		return reason.CantGetPiece, fmt.Sprintf("stage=get_piece piece_id=%d timeout_ms=%d error=%s", pieceID, rldpTimeout.Milliseconds(), err.Error())
+		if errors.Is(err, adnl.ErrPeerConnClosed) {
+			connClosed = true
+		}
+		return reason.CantGetPiece, fmt.Sprintf("stage=get_piece piece_id=%d timeout_ms=%d error=%s", pieceID, pieceBudget.Milliseconds(), err.Error())
 	}
 
 	proof, err := cell.FromBOC(piece.Proof)
@@ -397,7 +504,12 @@ func piecesCount(info tonstorage.TorrentInfo) (int32, error) {
 }
 
 func (s *peerPingState) shouldProbe(now time.Time) bool {
-	if s == nil || s.lastSuccessAt.IsZero() {
+	if s == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastSuccessAt.IsZero() {
 		return true
 	}
 	return now.Sub(s.lastSuccessAt) >= pingCacheTTL
@@ -407,14 +519,57 @@ func (s *peerPingState) markSuccess(now time.Time) {
 	if s == nil {
 		return
 	}
+	s.mu.Lock()
 	s.lastSuccessAt = now
+	s.mu.Unlock()
 }
 
 func (s *peerPingState) invalidate() {
 	if s == nil {
 		return
 	}
+	s.mu.Lock()
 	s.lastSuccessAt = time.Time{}
+	s.mu.Unlock()
+}
+
+func (t *failureTally) stoppedNow() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.stopped
+}
+
+func (t *failureTally) record(code reason.Code, details string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.stats[code]++
+	if code == reason.ValidStorageProof {
+		t.failsInARow = 0
+		return
+	}
+	t.details[details]++
+	t.failsInARow++
+	if t.failsInARow > t.threshold {
+		t.stopped = true
+	}
+}
+
+func (t *failureTally) recordSkip(details string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.details[details]++
+}
+
+func (t *failureTally) skipDetails() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return fmt.Sprintf("stage=skip reason=too_many_consecutive_failures threshold=%d fails_in_a_row=%d", t.threshold, t.failsInARow)
+}
+
+func (t *failureTally) snapshot() (map[reason.Code]int, map[string]int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.stats, t.details
 }
 
 func fillProviderResults(

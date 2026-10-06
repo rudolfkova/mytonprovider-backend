@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -14,6 +15,9 @@ const (
 	defaultAgentID                = "agent"
 	defaultLocation               = "unknown"
 	defaultMaxConcurrentProviders = 40
+	defaultMaxConcurrentBags      = 4
+	defaultPieceMinBPS            = 312500
+	defaultPieceTimeoutCap        = 15 * time.Second
 	defaultTonConfigURL           = "https://ton-blockchain.github.io/global.config.json"
 	defaultAdnlPort               = "16167"
 )
@@ -26,6 +30,12 @@ type Config struct {
 	TLSCertFile            string
 	TLSKeyFile             string
 	MaxConcurrentProviders int
+	// MaxConcurrentBags is how many contracts of one provider may be checked at once.
+	MaxConcurrentBags int
+	// PieceMinBPS is the assumed floor throughput used to size the GetPiece timeout.
+	PieceMinBPS uint64
+	// PieceTimeoutCap is the upper bound of a GetPiece timeout.
+	PieceTimeoutCap time.Duration
 	// TonConfigURL is the TON global config URL for liteclient/DHT (RunStorageRates).
 	TonConfigURL string
 	// AdnlPort is the UDP port for ADNL (must not conflict with coordinator on the same host).
@@ -49,6 +59,9 @@ func Load() (Config, error) {
 		TLSCertFile:            os.Getenv("AGENT_TLS_CERT_FILE"),
 		TLSKeyFile:             os.Getenv("AGENT_TLS_KEY_FILE"),
 		MaxConcurrentProviders: defaultMaxConcurrentProviders,
+		MaxConcurrentBags:      defaultMaxConcurrentBags,
+		PieceMinBPS:            defaultPieceMinBPS,
+		PieceTimeoutCap:        defaultPieceTimeoutCap,
 		TonConfigURL:           envOrDefault("AGENT_TON_CONFIG_URL", defaultTonConfigURL),
 		AdnlPort:               envOrDefault("AGENT_ADNL_PORT", defaultAdnlPort),
 		MetricsListenAddr:      strings.TrimSpace(os.Getenv("AGENT_METRICS_LISTEN_ADDR")),
@@ -69,6 +82,30 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid AGENT_MAX_CONCURRENT_RATES: %q", s)
 		}
 		cfg.MaxConcurrentRates = v
+	}
+
+	if s := os.Getenv("AGENT_MAX_CONCURRENT_BAGS"); s != "" {
+		v, err := strconv.Atoi(s)
+		if err != nil || v <= 0 {
+			return Config{}, fmt.Errorf("invalid AGENT_MAX_CONCURRENT_BAGS: %q", s)
+		}
+		cfg.MaxConcurrentBags = v
+	}
+
+	if s := os.Getenv("AGENT_PIECE_MIN_BPS"); s != "" {
+		v, err := strconv.ParseUint(s, 10, 64)
+		if err != nil || v == 0 {
+			return Config{}, fmt.Errorf("invalid AGENT_PIECE_MIN_BPS: %q", s)
+		}
+		cfg.PieceMinBPS = v
+	}
+
+	if s := os.Getenv("AGENT_PIECE_TIMEOUT_CAP_MS"); s != "" {
+		v, err := strconv.Atoi(s)
+		if err != nil || v <= 0 {
+			return Config{}, fmt.Errorf("invalid AGENT_PIECE_TIMEOUT_CAP_MS: %q", s)
+		}
+		cfg.PieceTimeoutCap = time.Duration(v) * time.Millisecond
 	}
 
 	if cfg.AuthToken == "" {
