@@ -106,7 +106,9 @@ type ipclient interface {
 
 type agentclient interface {
 	RunChecksAll(ctx context.Context, req *providerchecksv1.RunChecksRequest) ([]agentrpc.RunChecksResult, []agentrpc.AgentCallError)
+	RunChecks(ctx context.Context, endpoint string, req *providerchecksv1.RunChecksRequest) (agentrpc.RunChecksResult, error)
 	RunStorageRatesAll(ctx context.Context, req *providerchecksv1.RunStorageRatesRequest) ([]agentrpc.RunStorageRatesResult, []agentrpc.AgentCallError)
+	Endpoints() []string
 	AgentCount() int
 }
 
@@ -145,6 +147,9 @@ type providersMasterWorker struct {
 	logger         *slog.Logger
 	lastIPsMu      sync.RWMutex
 	lastKnownIPs   map[string]db.ProviderIP
+
+	providerAgentMu      sync.Mutex
+	providerAgentSuccess map[string]string // providerPubkey -> endpoint of last Valid
 }
 
 type Worker interface {
@@ -525,7 +530,7 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 		return
 	}
 
-	mainResults, err := w.runStoreProofChecks(ctx, runID, storageContracts, availableProvidersIPs, recorder)
+	mainResults, mainAssignment, err := w.runStoreProofChecks(ctx, runID, storageContracts, availableProvidersIPs, recorder, nil)
 	if err != nil {
 		interval = storeProofFailureInterval
 		recorder.Flush(ctx)
@@ -631,7 +636,7 @@ func (w *providersMasterWorker) StoreProof(ctx context.Context) (interval time.D
 	retryCtx, cancelRetry := context.WithDeadline(ctx, retryDeadline)
 	defer cancelRetry()
 
-	retryResults, retryErr := w.runStoreProofChecks(retryCtx, runID+"-retry", pending, availableProvidersIPs, retryRecorder)
+	retryResults, _, retryErr := w.runStoreProofChecks(retryCtx, runID+"-retry", pending, availableProvidersIPs, retryRecorder, mainAssignment)
 	if retryErr != nil {
 		log.Warn("StoreProof retry RunChecks failed", "error", retryErr)
 		retryResults = nil
@@ -786,7 +791,9 @@ func (w *providersMasterWorker) UpdateIPInfo(ctx context.Context) (interval time
 	return
 }
 
-// runStoreProofChecks fans out RunChecks to all agents, merges results, and records pipeline events.
+// runStoreProofChecks shards RunChecks across agents, merges results, and records pipeline events.
+// excludeByProvider maps providerPubkey -> endpoint to avoid on retry when another agent exists.
+// assignment is providerPubkey -> endpoint used for this pass.
 // It does not write public reason to the database.
 func (w *providersMasterWorker) runStoreProofChecks(
 	ctx context.Context,
@@ -794,13 +801,14 @@ func (w *providersMasterWorker) runStoreProofChecks(
 	storageContracts []db.ContractToProviderRelation,
 	availableProvidersIPs map[string]db.ProviderIP,
 	recorder *pipelineevents.Recorder,
-) (results map[string]mergedContractCheck, err error) {
+	excludeByProvider map[string]string,
+) (results map[string]mergedContractCheck, assignment map[string]string, err error) {
 	log := w.logger.With(slog.String("worker", "StoreProof"), slog.String("function", "runStoreProofChecks"), slog.String("job_id", jobID))
 	if w.agentClient == nil || w.agentClient.AgentCount() == 0 {
-		return nil, fmt.Errorf("no configured agent clients for RunChecks")
+		return nil, nil, fmt.Errorf("no configured agent clients for RunChecks")
 	}
 	if len(storageContracts) == 0 {
-		return map[string]mergedContractCheck{}, nil
+		return map[string]mergedContractCheck{}, map[string]string{}, nil
 	}
 
 	req, providerCount, checkedKeys := w.buildRunChecksRPCRequest(jobID, storageContracts, availableProvidersIPs)
@@ -814,19 +822,29 @@ func (w *providersMasterWorker) runStoreProofChecks(
 		}
 		results = buildBagCheckResults(storageContracts, checkedKeys, nil)
 		log.Warn("no providers with resolved endpoints for RunChecks", "contracts", len(storageContracts))
-		return results, nil
+		return results, map[string]string{}, nil
 	}
 
-	responses, callErrs := w.agentClient.RunChecksAll(ctx, req)
+	endpoints := w.agentClient.Endpoints()
+	if len(endpoints) == 0 {
+		return nil, nil, fmt.Errorf("no configured agent endpoints for RunChecks")
+	}
+
+	sticky := w.snapshotProviderAgentSuccess()
+	shard := assignProvidersToAgents(req.Providers, endpoints, sticky, excludeByProvider)
+	assignment = shard.byProvider
+
+	responses, callErrs := w.fanoutRunChecks(ctx, req, shard.byEndpoint)
 	for _, callErr := range callErrs {
 		log.Warn("RunChecks failed for agent", "endpoint", callErr.Endpoint, "error", callErr.Err)
 	}
 	if len(responses) == 0 {
-		return nil, fmt.Errorf("all agents are unavailable for RunChecks")
+		return nil, assignment, fmt.Errorf("all agents are unavailable for RunChecks")
 	}
 
 	merged, valid := mergeRunChecksResponses(storageContracts, responses)
 	results = buildBagCheckResults(storageContracts, checkedKeys, merged)
+	w.updateProviderAgentSuccess(storageContracts, results, assignment)
 
 	if recorder != nil {
 		for _, sc := range storageContracts {
@@ -845,9 +863,98 @@ func (w *providersMasterWorker) runStoreProofChecks(
 		"valid", valid,
 		"agents_total", w.agentClient.AgentCount(),
 		"agents_successful", len(responses),
+		"shard_providers", len(assignment),
 	)
 
-	return results, nil
+	return results, assignment, nil
+}
+
+func (w *providersMasterWorker) fanoutRunChecks(
+	ctx context.Context,
+	base *providerchecksv1.RunChecksRequest,
+	byEndpoint map[string][]*providerchecksv1.ProviderBatch,
+) ([]agentrpc.RunChecksResult, []agentrpc.AgentCallError) {
+	type workItem struct {
+		endpoint  string
+		providers []*providerchecksv1.ProviderBatch
+	}
+	items := make([]workItem, 0, len(byEndpoint))
+	for endpoint, providers := range byEndpoint {
+		if len(providers) == 0 {
+			continue
+		}
+		items = append(items, workItem{endpoint: endpoint, providers: providers})
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+
+	results := make([]agentrpc.RunChecksResult, 0, len(items))
+	errs := make([]agentrpc.AgentCallError, 0)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, item := range items {
+		wg.Add(1)
+		go func(item workItem) {
+			defer wg.Done()
+			req := &providerchecksv1.RunChecksRequest{
+				JobId:     base.GetJobId(),
+				Providers: item.providers,
+				Timeouts:  base.GetTimeouts(),
+			}
+			resp, err := w.agentClient.RunChecks(ctx, item.endpoint, req)
+			if err != nil {
+				mu.Lock()
+				errs = append(errs, agentrpc.AgentCallError{Endpoint: item.endpoint, Err: err})
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			results = append(results, resp)
+			mu.Unlock()
+		}(item)
+	}
+	wg.Wait()
+	return results, errs
+}
+
+func (w *providersMasterWorker) snapshotProviderAgentSuccess() map[string]string {
+	w.providerAgentMu.Lock()
+	defer w.providerAgentMu.Unlock()
+	if len(w.providerAgentSuccess) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(w.providerAgentSuccess))
+	for k, v := range w.providerAgentSuccess {
+		out[k] = v
+	}
+	return out
+}
+
+func (w *providersMasterWorker) updateProviderAgentSuccess(
+	storageContracts []db.ContractToProviderRelation,
+	results map[string]mergedContractCheck,
+	assignment map[string]string,
+) {
+	if len(results) == 0 || len(assignment) == 0 {
+		return
+	}
+	w.providerAgentMu.Lock()
+	defer w.providerAgentMu.Unlock()
+	if w.providerAgentSuccess == nil {
+		w.providerAgentSuccess = make(map[string]string)
+	}
+	for _, sc := range storageContracts {
+		row, ok := results[contractRelationKey(sc)]
+		if !ok || row.Reason != constants.ValidStorageProof {
+			continue
+		}
+		endpoint := assignment[sc.ProviderPublicKey]
+		if endpoint == "" {
+			continue
+		}
+		w.providerAgentSuccess[sc.ProviderPublicKey] = endpoint
+	}
 }
 
 type mergedContractCheck struct {
@@ -1607,20 +1714,21 @@ func NewWorker(
 	}
 
 	return &providersMasterWorker{
-		providers:      providers,
-		system:         system,
-		ton:            ton,
-		prv:            prv,
-		providerClient: providerClient,
-		agentClient:    agentClient,
-		dhtClient:      dhtClient,
-		ipinfo:         ipinfo,
-		masterAddr:     masterAddr,
-		batchSize:      batchSize,
-		timeouts:       timeouts,
-		endpointCfg:    endpointCfg,
-		storeProofCfg:  storeProofCfg,
-		logger:         logger,
-		lastKnownIPs:   make(map[string]db.ProviderIP),
+		providers:            providers,
+		system:               system,
+		ton:                  ton,
+		prv:                  prv,
+		providerClient:       providerClient,
+		agentClient:          agentClient,
+		dhtClient:            dhtClient,
+		ipinfo:               ipinfo,
+		masterAddr:           masterAddr,
+		batchSize:            batchSize,
+		timeouts:             timeouts,
+		endpointCfg:          endpointCfg,
+		storeProofCfg:        storeProofCfg,
+		logger:               logger,
+		lastKnownIPs:         make(map[string]db.ProviderIP),
+		providerAgentSuccess: make(map[string]string),
 	}
 }
