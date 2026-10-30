@@ -17,12 +17,12 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 
+	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 	"mytonprovider-agent/internal/checker"
 	"mytonprovider-agent/internal/config"
 	"mytonprovider-agent/internal/lokipush"
 	"mytonprovider-agent/internal/metrics"
 	"mytonprovider-agent/internal/tontransport"
-	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 )
 
 // gRPC HTTP/2 keepalive defaults (server → client pings + policy for client pings).
@@ -52,7 +52,12 @@ func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
 		return nil, nil, fmt.Errorf("create TLS credentials: %w", err)
 	}
 
-	checks, err := checker.New(cfg.MaxConcurrentProviders, logger)
+	checks, err := checker.New(checker.Options{
+		MaxConcurrentProviders: cfg.MaxConcurrentProviders,
+		MaxConcurrentBags:      cfg.MaxConcurrentBags,
+		PieceMinBPS:            cfg.PieceMinBPS,
+		PieceTimeoutCap:        cfg.PieceTimeoutCap,
+	}, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("initialize checker: %w", err)
 	}

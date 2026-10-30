@@ -108,7 +108,7 @@ type TelemetryRequest struct {
 	CPUInfo          CPUInfo            `json:"cpu_info"`
 	Pings            map[string]float32 `json:"pings"`
 	Benchmark        interface{}        `json:"benchmark"`
-	XRealIP          string             `json:"x_real_ip"`
+	XRealIP          string             `json:"-"`
 	Timestamp        uint64             `json:"timestamp"`
 }
 
@@ -164,6 +164,7 @@ type BenchmarksRequest struct {
 	Disk      map[string]DiskBenchmark `json:"disk"`
 	Network   NetworkBenchmark         `json:"network"`
 	Timestamp int64                    `json:"timestamp"` // Unix timestamp in seconds
+	XRealIP   string                   `json:"-"`
 }
 
 type ProviderInfo struct {

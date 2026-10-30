@@ -125,6 +125,53 @@ func (c *Client) AgentCount() int {
 	return len(c.agents)
 }
 
+func (c *Client) Endpoints() []string {
+	if c == nil || len(c.agents) == 0 {
+		return nil
+	}
+	out := make([]string, len(c.agents))
+	for i, a := range c.agents {
+		out[i] = a.endpoint
+	}
+	return out
+}
+
+func (c *Client) RunChecks(ctx context.Context, endpoint string, req *providerchecksv1.RunChecksRequest) (RunChecksResult, error) {
+	if c == nil {
+		return RunChecksResult{}, fmt.Errorf("agent client is nil")
+	}
+	agent, ok := c.agentByEndpoint(endpoint)
+	if !ok {
+		return RunChecksResult{}, fmt.Errorf("unknown agent endpoint %q", endpoint)
+	}
+
+	callCtx := ctx
+	cancel := func() {}
+	if c.requestTimeout > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, c.requestTimeout)
+	}
+	defer cancel()
+	callCtx = metadata.AppendToOutgoingContext(callCtx, "authorization", "Bearer "+c.authToken)
+
+	resp, err := agent.client.RunChecks(callCtx, req)
+	if err != nil {
+		return RunChecksResult{}, err
+	}
+	return RunChecksResult{
+		Endpoint: agent.endpoint,
+		Response: resp,
+	}, nil
+}
+
+func (c *Client) agentByEndpoint(endpoint string) (agentClient, bool) {
+	for _, a := range c.agents {
+		if a.endpoint == endpoint {
+			return a, true
+		}
+	}
+	return agentClient{}, false
+}
+
 func (c *Client) RunChecksAll(ctx context.Context, req *providerchecksv1.RunChecksRequest) ([]RunChecksResult, []AgentCallError) {
 	if c == nil || len(c.agents) == 0 {
 		return nil, nil
@@ -140,15 +187,7 @@ func (c *Client) RunChecksAll(ctx context.Context, req *providerchecksv1.RunChec
 		go func(agent agentClient) {
 			defer wg.Done()
 
-			callCtx := ctx
-			cancel := func() {}
-			if c.requestTimeout > 0 {
-				callCtx, cancel = context.WithTimeout(ctx, c.requestTimeout)
-			}
-			defer cancel()
-			callCtx = metadata.AppendToOutgoingContext(callCtx, "authorization", "Bearer "+c.authToken)
-
-			resp, err := agent.client.RunChecks(callCtx, req)
+			result, err := c.RunChecks(ctx, agent.endpoint, req)
 			if err != nil {
 				mu.Lock()
 				errs = append(errs, AgentCallError{
@@ -160,10 +199,7 @@ func (c *Client) RunChecksAll(ctx context.Context, req *providerchecksv1.RunChec
 			}
 
 			mu.Lock()
-			results = append(results, RunChecksResult{
-				Endpoint: agent.endpoint,
-				Response: resp,
-			})
+			results = append(results, result)
 			mu.Unlock()
 		}(agent)
 	}

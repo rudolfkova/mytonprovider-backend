@@ -6,6 +6,15 @@ import (
 	"mytonprovider-coordinator/internal/models"
 )
 
+func requestSourceIP(c *fiber.Ctx) string {
+	ip := c.Get("X-Real-IP")
+	if ip != "" {
+		return ip
+	}
+
+	return c.IP()
+}
+
 func okHandler(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"status": "ok",

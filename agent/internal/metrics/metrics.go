@@ -64,6 +64,12 @@ var (
 			Buckets: []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 20000},
 		},
 	)
+	runChecksPieceLimit = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "agent_runchecks_piece_limit",
+			Help: "Current AIMD limit on concurrent GetPiece transfers",
+		},
+	)
 	runStorageRatesJobsCompleted = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "agent_runstoragerates_jobs_completed_total",
@@ -154,6 +160,11 @@ func codeFromErr(err error) codes.Code {
 		return s.Code()
 	}
 	return codes.Unknown
+}
+
+// SetPieceLimit records the current AIMD cap on concurrent GetPiece calls.
+func SetPieceLimit(n int) {
+	runChecksPieceLimit.Set(float64(n))
 }
 
 // IncRunChecksResult increments per-contract reason (bounded enum string).

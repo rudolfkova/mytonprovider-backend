@@ -247,6 +247,17 @@ func (m *metricsMiddleware) AddProviders(ctx context.Context, providers []db.Pro
 	return m.repo.AddProviders(ctx, providers)
 }
 
+func (m *metricsMiddleware) GetProviderIP(ctx context.Context, pubkey string) (ip string, err error) {
+	defer func(s time.Time) {
+		labels := []string{
+			"GetProviderIP", strconv.FormatBool(err != nil),
+		}
+		m.reqCount.WithLabelValues(labels...).Add(1)
+		m.reqDuration.WithLabelValues(labels...).Observe(time.Since(s).Seconds())
+	}(time.Now())
+	return m.repo.GetProviderIP(ctx, pubkey)
+}
+
 func (m *metricsMiddleware) GetProvidersIPs(ctx context.Context) (ips []db.ProviderIP, err error) {
 	defer func(s time.Time) {
 		labels := []string{
