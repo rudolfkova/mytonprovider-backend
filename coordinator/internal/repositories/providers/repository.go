@@ -38,6 +38,7 @@ type Repository interface {
 	AddProviders(ctx context.Context, providers []db.ProviderCreate) (err error)
 
 	GetProvidersIPs(ctx context.Context) (ips []db.ProviderIP, err error)
+	GetProviderIP(ctx context.Context, pubkey string) (ip string, err error)
 	GetProvidersEndpointState(ctx context.Context, pubkeys []string) (rows []db.ProviderEndpointState, err error)
 	UpdateProvidersIPInfo(ctx context.Context, ips []db.ProviderIPInfo) (err error)
 
@@ -964,6 +965,21 @@ func (r *repository) AddProviders(ctx context.Context, providers []db.ProviderCr
 	`
 
 	_, err = r.db.Exec(ctx, query, providers)
+
+	return
+}
+
+func (r *repository) GetProviderIP(ctx context.Context, pubkey string) (ip string, err error) {
+	query := `
+		SELECT COALESCE(ip, '')
+		FROM providers.providers
+		WHERE lower(public_key) = lower($1)
+	`
+
+	err = r.db.QueryRow(ctx, query, pubkey).Scan(&ip)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
 
 	return
 }

@@ -87,7 +87,7 @@ func (h *handler) updateTelemetry(c *fiber.Ctx) (err error) {
 		return errorHandler(c, err)
 	}
 
-	req.XRealIP = c.Get("X-Real-IP")
+	req.XRealIP = requestSourceIP(c)
 
 	err = h.providers.UpdateTelemetry(c.Context(), req, body)
 	if err != nil {
@@ -120,6 +120,8 @@ func (h *handler) updateBenchmarks(c *fiber.Ctx) (err error) {
 		err = fiber.NewError(fiber.StatusBadRequest, "invalid request body")
 		return errorHandler(c, err)
 	}
+
+	req.XRealIP = requestSourceIP(c)
 
 	err = h.providers.UpdateBenchmarks(c.Context(), req)
 	if err != nil {

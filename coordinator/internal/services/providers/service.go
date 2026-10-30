@@ -11,6 +11,7 @@ import (
 	"mytonprovider-coordinator/internal/models"
 	v1 "mytonprovider-coordinator/internal/models/api/v1"
 	"mytonprovider-coordinator/internal/models/db"
+	"mytonprovider-coordinator/internal/utils"
 )
 
 const (
@@ -25,6 +26,7 @@ type service struct {
 
 type providers interface {
 	GetProvidersByPubkeys(ctx context.Context, pubkeys []string) ([]db.ProviderDB, error)
+	GetProviderIP(ctx context.Context, pubkey string) (ip string, err error)
 	GetFiltersRange(ctx context.Context) (db.FiltersRange, error)
 	GetFilteredProviders(ctx context.Context, filters db.ProviderFilters, sort db.ProviderSort, limit, offset int) ([]db.ProviderDB, error)
 	GetStorageContractsChecks(ctx context.Context, contracts []string) ([]db.ContractCheck, error)
@@ -107,6 +109,11 @@ func (s *service) UpdateTelemetry(ctx context.Context, telemetry v1.TelemetryReq
 		return models.NewAppError(models.BadRequestErrorCode, "request body too large")
 	}
 
+	err = s.verifyProviderSourceIP(ctx, telemetry.Storage.Provider.PubKey, telemetry.XRealIP)
+	if err != nil {
+		return
+	}
+
 	// logic in cache middleware
 
 	return nil
@@ -117,9 +124,35 @@ func (s *service) UpdateBenchmarks(ctx context.Context, benchmark v1.BenchmarksR
 		return models.NewAppError(models.BadRequestErrorCode, "")
 	}
 
+	err = s.verifyProviderSourceIP(ctx, benchmark.PubKey, benchmark.XRealIP)
+	if err != nil {
+		return
+	}
+
 	// logic in cache middleware
 
 	return nil
+}
+
+func (s *service) verifyProviderSourceIP(ctx context.Context, pubkey, sourceIP string) error {
+	providerIP, err := s.providers.GetProviderIP(ctx, pubkey)
+	if err != nil {
+		s.logger.Error("failed to get provider ip", slog.String("pubkey", pubkey), slog.String("error", err.Error()))
+		return models.NewAppError(models.InternalServerErrorCode, "")
+	}
+
+	if utils.SameIP(sourceIP, providerIP) {
+		return nil
+	}
+
+	s.logger.Warn(
+		"provider source ip mismatch",
+		slog.String("pubkey", pubkey),
+		slog.String("source_ip", sourceIP),
+		slog.String("provider_ip", providerIP),
+	)
+
+	return models.NewAppError(models.ForbiddenErrorCode, "")
 }
 
 func (s *service) getExactProviders(ctx context.Context, pubkeys []string, log *slog.Logger) (providers []v1.Provider, err error) {

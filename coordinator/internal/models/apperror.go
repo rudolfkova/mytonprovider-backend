@@ -9,12 +9,14 @@ const (
 	NotFoundErrorCode       = http.StatusNotFound
 	InternalServerErrorCode = http.StatusInternalServerError
 	BadRequestErrorCode     = http.StatusBadRequest
+	ForbiddenErrorCode      = http.StatusForbidden
 )
 
 var defaultMessages = map[int]string{
 	InternalServerErrorCode: "internal server error",
 	BadRequestErrorCode:     "bad request",
 	NotFoundErrorCode:       "not found",
+	ForbiddenErrorCode:      "forbidden",
 }
 
 // AppError — custom error type to handle service layer errors
