@@ -533,7 +533,6 @@ func (r *repository) UpdateRating(ctx context.Context) (err error) {
 				0 as max_bag_size_bytes, -- p.max_bag_size_bytes 
 				p.rate_per_mb_per_day,
 				t.total_provider_space,
-				t.used_provider_space,
 				t.cpu_number,
 				t.total_ram,
 				b.qd64_disk_write_speed,
@@ -553,7 +552,7 @@ func (r *repository) UpdateRating(ctx context.Context) (err error) {
 				0.0001 * (2 * EXTRACT(EPOCH FROM NOW()) - EXTRACT(EPOCH FROM pr.registered_at)) +
 				0.00002 * (COALESCE(pr.max_span, 0) - COALESCE(pr.min_span, 0)) +
 				0.00000000008 * COALESCE(pr.max_bag_size_bytes, 0) +
-				0.000000004 * LEAST(GREATEST(COALESCE(pr.total_provider_space, 0) - COALESCE(pr.used_provider_space, 0), 0) * (1024 ^ 3), 10000000000000) +
+				0.000000004 * LEAST(COALESCE(pr.total_provider_space, 0) * (1024 ^ 3), 10000000000000) +
 				1200 * LEAST(COALESCE(pr.cpu_number, 0), 4) +
 				0.0000006 * LEAST(COALESCE(pr.total_ram, 0)::double precision * 1000000000, 8000000000) +
 				0.00008 * LEAST(COALESCE(providers.parse_speed_to_int(pr.qd64_disk_write_speed), 0), 20 * 1024 * 1024) +
