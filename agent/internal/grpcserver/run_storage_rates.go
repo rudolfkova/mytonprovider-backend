@@ -9,11 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"mytonprovider-agent/internal/metrics"
 	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
+	"mytonprovider-agent/internal/metrics"
 )
 
 const (
@@ -163,10 +164,14 @@ func (s *service) fetchOneStorageRate(
 	}
 
 	t0 := time.Now()
-	qctx, qcancel := context.WithTimeout(ctx, perQuery)
-	defer qcancel()
-
-	rates, err := s.ratesTransport.Client().GetStorageRates(qctx, key, querySize)
+	var rates *transport.StorageRatesResponse
+	err = s.ratesTransport.Call(ctx, perQuery, func(qctx context.Context, c *transport.Client) error {
+		var callErr error
+		rates, callErr = c.GetStorageRates(qctx, key, querySize)
+		return callErr
+	}, func(attemptErr error) {
+		log.Debug("GetStorageRates failed, retrying", "provider_pubkey", pk, "error", attemptErr)
+	})
 	row.LatencyMs = uint32(time.Since(t0).Milliseconds())
 	if err != nil {
 		row.Details = err.Error()
