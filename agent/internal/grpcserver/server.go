@@ -62,7 +62,7 @@ func New(cfg config.Config, logger *slog.Logger) (*grpc.Server, func(), error) {
 		return nil, nil, fmt.Errorf("initialize checker: %w", err)
 	}
 
-	ratesTransport := tontransport.NewProviderTransport(cfg.TonConfigURL, cfg.AdnlPort, cfg.AdnlPrivateKey, logger)
+	ratesTransport := tontransport.NewProviderTransport(cfg.TonConfigURL, cfg.AdnlPort, cfg.AdnlPrivateKey)
 	startCtx, cancelStart := context.WithTimeout(context.Background(), 2*time.Minute)
 	if err := ratesTransport.Start(startCtx); err != nil {
 		cancelStart()

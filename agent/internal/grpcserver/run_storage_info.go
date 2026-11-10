@@ -10,16 +10,15 @@ import (
 	"time"
 
 	"github.com/xssnick/tonutils-go/address"
-	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 	"mytonprovider-agent/internal/metrics"
+	providerchecksv1 "github.com/rudolfkova/mytonprovider-backend/contracts/gen/go/providerchecks/v1"
 )
 
 const (
-	maxStorageInfoQueries     = 4096
+	maxStorageInfoQueries = 4096
 	defaultStorageInfoQueryMs = uint32(10_000)
 )
 
@@ -172,17 +171,10 @@ func (s *service) fetchOneStorageInfo(
 	}
 
 	t0 := time.Now()
-	var info *transport.StorageResponse
-	err = s.ratesTransport.Call(ctx, perQuery, func(qctx context.Context, c *transport.Client) error {
-		var callErr error
-		info, callErr = c.RequestStorageInfo(qctx, key, contractAddr, q.GetByteToProof())
-		return callErr
-	}, func(attemptErr error) {
-		log.Debug("RequestStorageInfo failed, retrying",
-			"provider_pubkey", pk,
-			"contract_address", row.ContractAddress,
-			"error", attemptErr)
-	})
+	qctx, qcancel := context.WithTimeout(ctx, perQuery)
+	defer qcancel()
+
+	info, err := s.ratesTransport.Client().RequestStorageInfo(qctx, key, contractAddr, q.GetByteToProof())
 	row.LatencyMs = uint32(time.Since(t0).Milliseconds())
 	if err != nil {
 		row.Details = err.Error()
